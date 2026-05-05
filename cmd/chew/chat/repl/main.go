@@ -2,7 +2,7 @@
 //
 // Stdlib-only at the application layer. Reads stdin, plans via
 // ScriptedPlanner (deterministic regex vocabulary), dispatches verbs
-// through the tool registry, and keeps CHEW present in a terminal dock.
+// through the tool registry, and keeps CHEW's state in sync with the work.
 //
 // Brain lifecycle:
 //   - On startup we CHECK whether Bonsai is installed (cheap stat) but
@@ -40,8 +40,6 @@ func main() {
 	p := planner.NewScriptedPlanner()
 	tools := tool.NewDefault()
 	state := newMascotState("idle")
-	dock := newMascotDock()
-	defer dock.teardown()
 	scanner := bufio.NewScanner(os.Stdin)
 	scanner.Buffer(make([]byte, 0, 1024), 1024*1024) // big buffer for pasted input
 
@@ -62,15 +60,10 @@ func main() {
 	signal.Notify(sigCh, syscall.SIGINT, syscall.SIGTERM, syscall.SIGHUP)
 	go func() {
 		<-sigCh
-		dock.teardown()
 		stopBrain()
 		fmt.Println("\n*splash*")
 		os.Exit(0)
 	}()
-
-	// Greet with CHEW's face FIRST so the user sees him before any text.
-	// Beats a blank screen — feels alive from the moment you launch.
-	dock.render(state)
 
 	// Startup: clean up any orphan from a previous run, then check what's
 	// on disk. We do NOT auto-load — the user controls when Bonsai gets
@@ -114,7 +107,6 @@ func main() {
 		if plan.Mascot != "" {
 			state.set(plan.Mascot)
 		}
-		dock.render(state)
 
 		if plan.Response != "" {
 			fmt.Println()
@@ -130,7 +122,6 @@ func main() {
 			case err != nil:
 				fmt.Printf("\n(error running %s: %v)\n", v.Name, err)
 				state.set("ghost")
-				dock.render(state)
 			default:
 				if res.Output != "" {
 					fmt.Println()
@@ -138,7 +129,6 @@ func main() {
 				}
 				if res.Mascot != "" {
 					state.set(res.Mascot)
-					dock.render(state)
 				}
 			}
 		}
@@ -173,10 +163,8 @@ func main() {
 				fmt.Printf("\n(unknown wizard requested: %s)\n", plan.LaunchWizard)
 			}
 			// After any system action lands, render CHEW so the user
-			// sees him return — closing punctuation on the moment, not
-			// a blank screen leading to the next prompt.
+			// comes back to a neutral state before the next prompt.
 			state.set("idle")
-			dock.render(state)
 		}
 
 		// Settle back to idle a moment after a walk action.

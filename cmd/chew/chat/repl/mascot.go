@@ -5,8 +5,9 @@
 //   walk  — verb running / brain thinking (frames 3–5)
 //   ghost — error / brainless / unreachable (frames 6–7)
 //
-// The fixed top dock renders these states in place for interactive
-// terminals; non-TTY runs suppress mascot output entirely.
+// The REPL currently tracks mascot state but does not render the sprite
+// into the chat transcript. Keeping the terminal scrollback readable
+// takes priority over visual presence.
 
 package main
 
@@ -47,7 +48,8 @@ func (s *mascotState) nextFrameIdx() int {
 	}
 }
 
-// advance ticks the frame index forward. Called once per render in v0.
+// advance ticks the frame index forward. Kept for sprite/testbed callers
+// and future renderers that do not damage terminal scrollback.
 func (s *mascotState) advance() {
 	s.frameIdx++
 	s.lastTick = time.Now()

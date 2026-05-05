@@ -9,14 +9,14 @@ README](../../../README.md).
 `chat/repl/` is the binary entrypoint. `go run ./cmd/chew/chat/repl`
 (or `chew` after `./install.sh`) starts the loop:
 
-1. Create CHEW's top dock (interactive terminals only).
+1. Start the chat shell.
 2. Check brain state (installed? napping? not installed?).
 3. Resume the last project from `<repo>/brain/last-project.txt` if any.
 4. Prompt. On each input:
    - `planner.Plan(input)` — match against the regex vocabulary.
    - Print the response, dispatch any verbs through `tool.Registry`.
    - Handle system actions (install brain / wake up / nap / open project / etc.).
-   - Update the mascot dock when the state changes.
+   - Update mascot state when needed.
 5. On exit (quit, Ctrl+C, terminal close): stop the brain cleanly.
 
 ## Packages
@@ -85,11 +85,9 @@ assets/    Source art. CHEW_NES.png + CHEW_NES.json (Aseprite export),
 | 3–5 | walk | verb running / brain thinking |
 | 6–7 | ghost | error / brain unreachable / no brain installed |
 
-`mascotState.set(state)` updates the current animation; `mascotDock`
-draws the current frame into a fixed top terminal region. The conversation
-scrolls below that region, so CHEW stays present without rebuilding the
-sprite into the transcript. In non-interactive output (pipes, scripts,
-tests), the dock is disabled and no sprite ANSI blocks are emitted.
+`mascotState.set(state)` updates the current animation state. The REPL
+does not currently render the sprite into the chat transcript; preserving
+readable command output and normal terminal scrollback comes first.
 
 The full-cell renderer is two ANSI background-colored spaces per source
 pixel, so a 16×16 sprite is 32×16 character cells — readable in any
