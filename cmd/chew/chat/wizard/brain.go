@@ -23,6 +23,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"strings"
 	"syscall"
 	"time"
 )
@@ -41,11 +42,18 @@ type Brain struct {
 	cmd      *exec.Cmd
 	endpoint string // e.g. "http://127.0.0.1:8080"
 	logPath  string
+	pidPath  string // <brainDir>/brain.pid; written on Start, removed on Stop
 	stopOnce bool
 }
 
 // StartBrain spawns llama-server with the given config. Returns immediately
 // after the process is launched; call WaitHealthy to confirm readiness.
+//
+// We deliberately do NOT put llama-server in its own process group: keeping
+// it in CHEW's foreground group means SIGHUP from a closed terminal kills
+// it for free, no signal handler needed. The pidfile written here is the
+// belt to that suspenders — next CHEW launch can clean up an orphan from
+// a hard-killed previous run.
 func StartBrain(cfg BrainConfig) (*Brain, error) {
 	if cfg.BinaryPath == "" {
 		return nil, errors.New("BrainConfig.BinaryPath is required")
@@ -84,17 +92,22 @@ func StartBrain(cfg BrainConfig) (*Brain, error) {
 		cmd.Stderr = f
 	}
 
-	// New process group so we can signal the whole tree on Stop().
-	cmd.SysProcAttr = &syscall.SysProcAttr{Setpgid: true}
-
 	if err := cmd.Start(); err != nil {
 		return nil, fmt.Errorf("starting llama-server: %w", err)
+	}
+
+	pidPath := ""
+	if cfg.LogPath != "" {
+		// brain.pid lives next to brain.log so the brain dir owns both.
+		pidPath = filepath.Join(filepath.Dir(cfg.LogPath), "brain.pid")
+		_ = os.WriteFile(pidPath, []byte(fmt.Sprintf("%d\n", cmd.Process.Pid)), 0o644)
 	}
 
 	return &Brain{
 		cmd:      cmd,
 		endpoint: fmt.Sprintf("http://127.0.0.1:%d", cfg.Port),
 		logPath:  cfg.LogPath,
+		pidPath:  pidPath,
 	}, nil
 }
 
@@ -158,7 +171,7 @@ func (b *Brain) WaitHealthyOpts(ctx context.Context, opts WaitHealthyOpts) error
 }
 
 // Stop sends SIGTERM, waits up to 10 seconds, then escalates to SIGKILL.
-// Safe to call multiple times.
+// Removes the pidfile on the way out. Safe to call multiple times.
 func (b *Brain) Stop() error {
 	if b == nil || b.cmd == nil || b.cmd.Process == nil {
 		return nil
@@ -167,10 +180,13 @@ func (b *Brain) Stop() error {
 		return nil
 	}
 	b.stopOnce = true
+	defer func() {
+		if b.pidPath != "" {
+			_ = os.Remove(b.pidPath)
+		}
+	}()
 
-	// Signal the whole process group so any child threads die with us.
-	pgid := -b.cmd.Process.Pid
-	_ = syscall.Kill(pgid, syscall.SIGTERM)
+	_ = b.cmd.Process.Signal(syscall.SIGTERM)
 
 	done := make(chan error, 1)
 	go func() { done <- b.cmd.Wait() }()
@@ -179,10 +195,69 @@ func (b *Brain) Stop() error {
 	case <-done:
 		return nil
 	case <-time.After(10 * time.Second):
-		_ = syscall.Kill(pgid, syscall.SIGKILL)
+		_ = b.cmd.Process.Kill()
 		<-done
 		return errors.New("brain did not exit on SIGTERM; killed with SIGKILL")
 	}
+}
+
+// KillStaleBrain looks for a pidfile from a previous CHEW run and, if the
+// PID is still alive AND looks like our llama-server, kills it. Called by
+// the REPL on startup so a hard-crashed previous run doesn't leave the
+// brain hogging RAM.
+//
+// Safe to call when no pidfile exists — returns nil.
+func KillStaleBrain(brainDir string) error {
+	pidPath := filepath.Join(brainDir, "brain.pid")
+	body, err := os.ReadFile(pidPath)
+	if err != nil {
+		return nil // no pidfile, nothing to do
+	}
+	defer os.Remove(pidPath)
+
+	var pid int
+	if _, err := fmt.Sscanf(string(body), "%d", &pid); err != nil || pid <= 1 {
+		return nil
+	}
+
+	proc, err := os.FindProcess(pid)
+	if err != nil {
+		return nil
+	}
+	// On unix, FindProcess always succeeds; verify with a 0-signal test.
+	if err := proc.Signal(syscall.Signal(0)); err != nil {
+		return nil // not running
+	}
+	// Double-check the command line matches llama-server before killing.
+	if !looksLikeLlamaServer(pid) {
+		return nil // some other process snagged this PID
+	}
+
+	_ = proc.Signal(syscall.SIGTERM)
+	for i := 0; i < 10; i++ {
+		time.Sleep(500 * time.Millisecond)
+		if err := proc.Signal(syscall.Signal(0)); err != nil {
+			return nil
+		}
+	}
+	_ = proc.Kill()
+	return nil
+}
+
+// looksLikeLlamaServer is best-effort PID-comm verification. On platforms
+// where /proc isn't available, we fall back to "trust the pidfile."
+func looksLikeLlamaServer(pid int) bool {
+	// /proc on linux
+	if data, err := os.ReadFile(fmt.Sprintf("/proc/%d/comm", pid)); err == nil {
+		return strings.HasPrefix(string(data), "llama-server")
+	}
+	// macOS: ps lookup
+	out, err := exec.Command("ps", "-p", fmt.Sprintf("%d", pid), "-o", "comm=").Output()
+	if err == nil {
+		return strings.Contains(string(out), "llama-server")
+	}
+	// Unverifiable; assume yes (we wrote the pidfile, so it was ours).
+	return true
 }
 
 // (findLlamaServer moved to runtime_install.go as part of acquireLlamaServer,

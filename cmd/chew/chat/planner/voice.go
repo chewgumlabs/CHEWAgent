@@ -172,6 +172,57 @@ var responsePools = map[string][]string{
 		`What this frog handles, no brain required:`,
 	},
 
+	// brain_waking — shown while the REPL spawns llama-server in response
+	// to 'wake up'. No slots.
+	"brain_waking": {
+		`Waking the brain. Hmph. Hold on...`,
+		`Loading Bonsai. *croak* A few seconds...`,
+		`Brain transplant in progress. Stand by.`,
+	},
+
+	// brain_awake — shown when the brain is loaded and reachable.
+	"brain_awake": {
+		`*croak* Brain online.`,
+		`Brain awake. Ask me anything.`,
+		`Hmph. I'm thinking now. Talk.`,
+	},
+
+	// brain_already_awake — shown if the user types 'wake up' but the
+	// brain is already loaded.
+	"brain_already_awake": {
+		`Brain's already awake. Hmph.`,
+		`Already thinking. *croak*`,
+		`I'm awake. You alright?`,
+	},
+
+	// brain_napping — shown when the user runs 'nap' and the brain stops.
+	"brain_napping": {
+		`*yawn* Brain napping. Memory freed.`,
+		`Brain off. Nice and quiet.`,
+		`Hmph. Asleep. 'wake up' to bring me back.`,
+	},
+
+	// brain_already_napping — for 'nap' when nothing's running.
+	"brain_already_napping": {
+		`Brain's already napping. Hmph.`,
+		`Already off. *splash*`,
+		`Nothing to put to sleep — I'm brainless right now.`,
+	},
+
+	// brain_not_installed — shown when 'wake up' has nothing to load.
+	"brain_not_installed": {
+		`Hmph. No brain installed yet. Type 'install brain' first.`,
+		`Can't wake what isn't there. 'install brain' to set me up.`,
+		`No brain on disk. Install one first — 'install brain'.`,
+	},
+
+	// brain_wake_failed — when WakeBrain returns an error.
+	// Slot %s = friendly summary.
+	"brain_wake_failed": {
+		`Hmph. Brain wouldn't wake up: %s`,
+		`Couldn't get the brain online: %s. Try again in a moment.`,
+		`*splash* Brain stuck: %s`,
+	},
 }
 
 // ─── Pages ───────────────────────────────────────────────────────────────
@@ -193,13 +244,15 @@ var helpBody = `  read <file>           print file contents
   google <query>        same as 'web search'
   fetch <url>           pull a page from the web
   status                check brain status
-  install brain         upgrade me to use an LLM
+  install brain         download my brain (1.16 GB, one-time)
+  wake up               load the installed brain into memory
+  nap                   put the brain back to sleep, free memory
   list                  show all command patterns
   help                  this text
   quit                  exit
 
 For free-form questions ('explain X', 'what's wrong with Y'),
-I need a brain. Type 'install brain' to install one locally.`
+the brain has to be awake. 'install brain' once, 'wake up' per session.`
 
 // (the install-brain page used to live here; the wizard now owns all
 // user-facing text for that flow — see cmd/chew/chat/wizard/voice.go)

@@ -4,10 +4,14 @@
 // ScriptedPlanner (deterministic regex vocabulary), dispatches verbs
 // through the tool registry, and renders CHEW the mascot inline.
 //
-// After `install brain` succeeds, the REPL takes ownership of the
-// running brain (a llama-server subprocess) and swaps the planner's
-// fallback function so free-form questions hit the brain. The brain
-// dies with the REPL on exit.
+// Brain lifecycle:
+//   - On startup we CHECK whether Bonsai is installed (cheap stat) but
+//     do NOT load it. The user types `wake up` to spawn llama-server
+//     when they want thinking-mode; `nap` to stop it and free RAM.
+//   - The brain dies with the REPL: SIGINT/SIGTERM/SIGHUP handlers stop
+//     it cleanly, and llama-server inherits the REPL's process group so
+//     a closed terminal kills it for free. A pidfile lets the next CHEW
+//     run clean up an orphan from a hard-killed previous session.
 //
 // Run with:
 //   go run ./cmd/chew/chat/repl
@@ -19,7 +23,10 @@ import (
 	"errors"
 	"fmt"
 	"os"
+	"os/signal"
 	"strings"
+	"sync/atomic"
+	"syscall"
 	"time"
 
 	"github.com/chewgumlabs/CHEWAgent/cmd/chew/chat/planner"
@@ -29,36 +36,47 @@ import (
 
 func main() {
 	p := planner.NewScriptedPlanner()
-	tools := tool.NewDefault() // web_search + web_fetch wired today; more verbs as we add them
+	tools := tool.NewDefault()
 	state := newMascotState("idle")
 	scanner := bufio.NewScanner(os.Stdin)
-	// Bigger buffer than the default 64 KB so users can paste long inputs.
-	scanner.Buffer(make([]byte, 0, 1024), 1024*1024)
+	scanner.Buffer(make([]byte, 0, 1024), 1024*1024) // big buffer for pasted input
 
-	// brain is held here so we can Stop it on exit. Set after a successful
-	// install_brain wizard run, or auto-detected at startup.
-	var brain *wizard.Brain
-	defer func() {
-		if brain != nil {
-			_ = brain.Stop()
+	// brain is held in an atomic so the signal handler can read it
+	// without racing the main goroutine that mutates it on wake/nap.
+	var brain atomic.Pointer[wizard.Brain]
+	stopBrain := func() {
+		if b := brain.Swap(nil); b != nil {
+			_ = b.Stop()
 		}
+	}
+	defer stopBrain()
+
+	// Cleanup signal handler: SIGINT (Ctrl+C), SIGTERM, SIGHUP (terminal
+	// closed). All three skip Go's deferred funcs by default, so we wire
+	// our own handler that stops the brain before exiting.
+	sigCh := make(chan os.Signal, 1)
+	signal.Notify(sigCh, syscall.SIGINT, syscall.SIGTERM, syscall.SIGHUP)
+	go func() {
+		<-sigCh
+		stopBrain()
+		fmt.Println("\n*splash*")
+		os.Exit(0)
 	}()
 
-	// Auto-detect a previously-installed brain so users don't have to
-	// re-run 'install brain' every session.
-	fmt.Print("Waking up... ")
-	if existing, err := wizard.AutoDetectBrain(); err != nil {
-		fmt.Printf("brain found but didn't start cleanly (%v). Continuing brainless.\n", err)
-		printBrainlessIntro()
-	} else if existing != nil {
-		brain = existing
-		p.SetFallback(brainFallback(brain))
-		fmt.Println("brain online. *croak*")
-		printAwakeIntro()
-	} else {
-		fmt.Println("no brain installed yet.")
-		printBrainlessIntro()
+	// Startup: clean up any orphan from a previous run, then check what's
+	// on disk. We do NOT auto-load — the user controls when Bonsai gets
+	// loaded into RAM by typing `wake up`.
+	brainState, brainDir := wizard.CheckBrain()
+	if brainDir != "" {
+		_ = wizard.KillStaleBrain(brainDir)
 	}
+	switch brainState {
+	case wizard.BrainNapping:
+		fmt.Println("Brain installed but napping. Type 'wake up' to load it.")
+	case wizard.BrainNotInstalled:
+		fmt.Println("No brain installed yet. Type 'install brain' to set one up.")
+	}
+	printBrainlessIntro()
 
 	for {
 		fmt.Print("\n> ")
@@ -75,9 +93,6 @@ func main() {
 		if plan.Mascot != "" {
 			state.set(plan.Mascot)
 		}
-
-		// Render mascot once at the new state, before the response, so the
-		// user sees CHEW reacting.
 		renderMascot(state)
 
 		if plan.Response != "" {
@@ -85,9 +100,7 @@ func main() {
 			fmt.Println(plan.Response)
 		}
 
-		// Dispatch verbs through the tool registry. Tools that aren't
-		// registered yet (read_file, run_command, etc.) fall through to
-		// ErrUnknownTool and we list them as "planned but not wired."
+		// Dispatch verbs through the tool registry.
 		for _, v := range plan.Verbs {
 			res, err := tools.Dispatch(v.Name, v.Params)
 			switch {
@@ -111,23 +124,20 @@ func main() {
 			return
 		}
 
-		// Wizard handoff. The planner emits LaunchWizard when the user
-		// asks for a flow that's a state machine rather than a single
-		// turn (e.g., 'install brain').
+		// Wizard / system action handoff.
 		if plan.LaunchWizard != "" {
 			switch plan.LaunchWizard {
 			case "install_brain":
 				newBrain := runInstallBrainWizard(scanner)
 				if newBrain != nil {
-					if brain != nil {
-						_ = brain.Stop() // shouldn't happen but safe
-					}
-					brain = newBrain
-					// Swap the planner's fallback so free-form questions
-					// reach the brain instead of the "I don't know that
-					// one" message.
-					p.SetFallback(brainFallback(brain))
+					stopBrain() // drop any prior brain (shouldn't happen but safe)
+					brain.Store(newBrain)
+					p.SetFallback(brainFallback(newBrain))
 				}
+			case "wake_brain":
+				handleWakeBrain(p, &brain)
+			case "nap_brain":
+				handleNapBrain(p, &brain)
 			default:
 				fmt.Printf("\n(unknown wizard requested: %s)\n", plan.LaunchWizard)
 			}
@@ -140,6 +150,69 @@ func main() {
 				state.set("idle")
 			}()
 		}
+	}
+}
+
+// handleWakeBrain spawns the brain on demand. Idempotent: a no-op if the
+// brain is already loaded.
+func handleWakeBrain(p *planner.ScriptedPlanner, brain *atomic.Pointer[wizard.Brain]) {
+	if brain.Load() != nil {
+		fmt.Println()
+		fmt.Println(p.PickVoice("brain_already_awake"))
+		return
+	}
+	state, _ := wizard.CheckBrain()
+	if state != wizard.BrainNapping {
+		fmt.Println()
+		fmt.Println(p.PickVoice("brain_not_installed"))
+		return
+	}
+	fmt.Println()
+	fmt.Println(p.PickVoice("brain_waking"))
+	newBrain, err := wizard.WakeBrain()
+	if err != nil {
+		fmt.Println()
+		fmt.Printf(p.PickVoice("brain_wake_failed")+"\n", summariseSpawnErr(err))
+		return
+	}
+	brain.Store(newBrain)
+	p.SetFallback(brainFallback(newBrain))
+	fmt.Println()
+	fmt.Println(p.PickVoice("brain_awake"))
+}
+
+// handleNapBrain stops the running brain and restores the brainless
+// fallback. Idempotent.
+func handleNapBrain(p *planner.ScriptedPlanner, brain *atomic.Pointer[wizard.Brain]) {
+	b := brain.Swap(nil)
+	if b == nil {
+		fmt.Println()
+		fmt.Println(p.PickVoice("brain_already_napping"))
+		return
+	}
+	_ = b.Stop()
+	p.SetFallback(nil) // restore default brainless fallback
+	fmt.Println()
+	fmt.Println(p.PickVoice("brain_napping"))
+}
+
+// summariseSpawnErr converts a wake error into a short friendly phrase.
+func summariseSpawnErr(err error) string {
+	if err == nil {
+		return "unknown"
+	}
+	s := err.Error()
+	switch {
+	case strings.Contains(s, "no brain installed"):
+		return "no brain installed yet"
+	case strings.Contains(s, "address already in use"):
+		return "port 8080 is busy"
+	case strings.Contains(s, "permission denied"):
+		return "permission denied"
+	case strings.Contains(s, "deadline"), strings.Contains(s, "timeout"):
+		return "didn't respond in time"
+	default:
+		return "something went wrong"
 	}
 }
 
@@ -166,7 +239,6 @@ func runInstallBrainWizard(scanner *bufio.Scanner) *wizard.Brain {
 			continue
 		}
 		done, _ := w.Step(input, reply)
-		// w already emitted any user-facing error message via reply.
 		if done {
 			break
 		}
@@ -176,17 +248,8 @@ func runInstallBrainWizard(scanner *bufio.Scanner) *wizard.Brain {
 
 func printBrainlessIntro() {
 	fmt.Println("┌──────────────────────────────────────────────────────┐")
-	fmt.Println("│ CHEW chat — brainless mode                           │")
-	fmt.Println("│ I do file ops, search, web search, fetch URLs, git   │")
-	fmt.Println("│ read-only. Type 'help' for the menu, 'install brain' │")
-	fmt.Println("│ to put a brain in me.                                │")
-	fmt.Println("└──────────────────────────────────────────────────────┘")
-}
-
-func printAwakeIntro() {
-	fmt.Println("┌──────────────────────────────────────────────────────┐")
-	fmt.Println("│ CHEW chat — thinking mode                            │")
-	fmt.Println("│ Brain is loaded. Ask me anything, or use commands    │")
-	fmt.Println("│ like 'read', 'web search', 'fetch'. 'help' for menu. │")
+	fmt.Println("│ CHEW chat                                            │")
+	fmt.Println("│ Commands: read, ls, write, find, run, git, web,      │")
+	fmt.Println("│ fetch, install brain, wake up, nap, help, quit.      │")
 	fmt.Println("└──────────────────────────────────────────────────────┘")
 }

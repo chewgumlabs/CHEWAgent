@@ -25,6 +25,7 @@ package wizard
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"io"
 	"net/http"
@@ -164,35 +165,52 @@ func (w *InstallBrain) RunningBrain() *Brain {
 	return w.brain
 }
 
-// AutoDetectBrain looks for a previously-installed brain at the canonical
-// location (<repo>/brain/<modelfile>) and spawns it if found. Used by the
-// REPL on startup so the user doesn't have to type 'install brain' every
-// session.
+// BrainState reports whether a brain is installed at the canonical location.
+type BrainState int
+
+const (
+	BrainNotInstalled BrainState = iota // no GGUF on disk
+	BrainNapping                        // GGUF on disk, but no process running
+)
+
+// CheckBrain returns the install state without loading the model. Cheap
+// (just a stat) — used by the REPL on startup so the chat shell appears
+// instantly. The user types 'wake up' to actually load Bonsai into RAM.
 //
-// Returns:
-//   (brain, nil) — installed brain found, spawned, healthy.
-//   (nil, nil)   — no install on disk; REPL should run in brainless mode.
-//   (nil, err)   — install exists but couldn't start; REPL surfaces a note.
-//
-// Health-deadline is 60s. The CHEW REPL is responsible for Stop()ing the
-// returned brain on exit.
-func AutoDetectBrain() (*Brain, error) {
+// brainDir is returned alongside so the caller can pass it to WakeBrain
+// or KillStaleBrain.
+func CheckBrain() (BrainState, string) {
 	root, err := repoAnchor()
 	if err != nil {
-		return nil, nil
+		return BrainNotInstalled, ""
 	}
 	brainDir := filepath.Join(root, "brain")
 	modelPath := filepath.Join(brainDir, installBrainModelFile)
 
 	info, err := os.Stat(modelPath)
 	if err != nil || info.IsDir() {
-		return nil, nil // not installed
+		return BrainNotInstalled, brainDir
 	}
-	// Guard against a half-finished download lingering as the model
-	// file. Bonsai is ~1.16 GB; anything under 100 MB is incomplete.
+	// Guard against a half-finished download. Bonsai is ~1.16 GB; under
+	// 100 MB is incomplete.
 	if info.Size() < 100*1024*1024 {
-		return nil, nil
+		return BrainNotInstalled, brainDir
 	}
+	return BrainNapping, brainDir
+}
+
+// WakeBrain spawns llama-server with the installed Bonsai model and waits
+// for /health. Returns the running *Brain on success.
+//
+// Caller must Stop() the brain on exit (or via the REPL's `nap` verb).
+// Does NOT check whether a brain is already running — that's the caller's
+// responsibility.
+func WakeBrain() (*Brain, error) {
+	state, brainDir := CheckBrain()
+	if state != BrainNapping {
+		return nil, errors.New("no brain installed; run 'install brain' first")
+	}
+	modelPath := filepath.Join(brainDir, installBrainModelFile)
 
 	binary, err := acquireLlamaServer(brainDir, nil)
 	if err != nil {

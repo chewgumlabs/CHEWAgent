@@ -245,3 +245,40 @@ func TestScripted_LocalSearchStillLocal(t *testing.T) {
 		}
 	}
 }
+
+func TestScripted_WakeBrainTriggers(t *testing.T) {
+	p := NewScriptedPlanner()
+	for _, in := range []string{"wake up", "wake", "wake brain", "start brain"} {
+		got := p.Plan(in)
+		if got.LaunchWizard != "wake_brain" {
+			t.Errorf("input %q: expected LaunchWizard=wake_brain, got %q", in, got.LaunchWizard)
+		}
+	}
+}
+
+func TestScripted_NapBrainTriggers(t *testing.T) {
+	p := NewScriptedPlanner()
+	for _, in := range []string{"nap", "sleep", "sleep brain", "stop brain"} {
+		got := p.Plan(in)
+		if got.LaunchWizard != "nap_brain" {
+			t.Errorf("input %q: expected LaunchWizard=nap_brain, got %q", in, got.LaunchWizard)
+		}
+	}
+}
+
+func TestScripted_PickVoice(t *testing.T) {
+	// PickVoice should hand out frog-flavored variants from the named pool
+	// in round-robin order. Empty for unknown keys.
+	p := NewScriptedPlanner()
+	first := p.PickVoice("brain_waking")
+	second := p.PickVoice("brain_waking")
+	if first == "" || second == "" {
+		t.Errorf("brain_waking pool should have variants; got %q / %q", first, second)
+	}
+	if first == second {
+		t.Errorf("expected round-robin to advance, got %q twice", first)
+	}
+	if got := p.PickVoice("nonexistent_pool"); got != "" {
+		t.Errorf("unknown pool should return empty, got %q", got)
+	}
+}

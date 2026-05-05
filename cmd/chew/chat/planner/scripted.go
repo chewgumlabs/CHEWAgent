@@ -104,6 +104,13 @@ func (p *ScriptedPlanner) pick(key string) string {
 	return pool[i%len(pool)]
 }
 
+// PickVoice exposes the round-robin pool picker so the REPL (and other
+// callers outside this package) can pull frog-flavored variants for
+// system-action messages. Returns "" if the pool key is unknown.
+func (p *ScriptedPlanner) PickVoice(key string) string {
+	return p.pick(key)
+}
+
 // makeFallback returns the closure used when nothing matches. It cycles
 // through fallback variants so the "I don't know that one" moment doesn't
 // read identically every time.
@@ -149,6 +156,19 @@ func registerCoreVocabulary(p *ScriptedPlanner) {
 	// straight into the wizard's flow.
 	p.Add(`(?i)^install brain$`, func(_ []string) Plan {
 		return Plan{LaunchWizard: "install_brain", Mascot: "idle"}
+	})
+
+	// wake up — signal the REPL to spawn the installed brain on demand.
+	// Loading Bonsai takes ~3-4s and ~1.5 GB RAM; the user controls when.
+	p.Add(`(?i)^(wake( up)?|wake brain|start brain)$`, func(_ []string) Plan {
+		return Plan{LaunchWizard: "wake_brain", Mascot: "walk"}
+	})
+
+	// nap / sleep — signal the REPL to stop the running brain and free
+	// memory. Subsequent free-form questions go back to the brainless
+	// fallback until the user types 'wake up' again.
+	p.Add(`(?i)^(nap|sleep|sleep brain|stop brain)$`, func(_ []string) Plan {
+		return Plan{LaunchWizard: "nap_brain", Mascot: "idle"}
 	})
 
 	// web — fetch a URL. MUST come before the generic `read <file>` rule

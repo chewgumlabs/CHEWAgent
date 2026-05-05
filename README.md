@@ -24,10 +24,14 @@ You'll get a REPL with the brainless vocabulary already wired:
 
 Type `install brain` to walk through the brain transplant. The wizard:
 1. checks the bundled `llama-server` runtime
-2. downloads Bonsai (~1.16 GB)
+2. downloads Bonsai (~1.16 GB) — one-time, parks it in `<repo>/brain/`
 3. wakes the brain on `localhost:8080`
 
-After that, CHEW handles free-form questions too.
+Subsequent sessions: the REPL reports "Brain installed but napping" on
+launch — type **`wake up`** to load Bonsai into RAM (a few seconds), or
+**`nap`** to put it back to sleep and free memory. CHEW only loads the
+brain when you ask. Closing the terminal kills it cleanly; a hard crash
+gets cleaned up on the next launch.
 
 ## See the mascot
 
