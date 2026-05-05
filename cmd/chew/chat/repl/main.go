@@ -65,6 +65,10 @@ func main() {
 		os.Exit(0)
 	}()
 
+	// Greet with CHEW's face FIRST so the user sees him before any text.
+	// Beats a blank screen — feels alive from the moment you launch.
+	renderMascot(state)
+
 	// Startup: clean up any orphan from a previous run, then check what's
 	// on disk. We do NOT auto-load — the user controls when Bonsai gets
 	// loaded into RAM by typing `wake up`.
@@ -74,9 +78,9 @@ func main() {
 	}
 	switch brainState {
 	case wizard.BrainNapping:
-		fmt.Println("Brain installed but napping. Type 'wake up' to load it.")
+		fmt.Println("\nBrain installed but napping. Type 'wake up' to load it.")
 	case wizard.BrainNotInstalled:
-		fmt.Println("No brain installed yet. Type 'install brain' to set one up.")
+		fmt.Println("\nNo brain installed yet. Type 'install brain' to set one up.")
 	}
 	printBrainlessIntro()
 

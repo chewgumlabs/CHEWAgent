@@ -12,7 +12,29 @@ your CPU. No accounts, no telemetry, no cloud.
 > know why. I don't seem to mind. I'll help you, even if I think you're
 > weird.*
 
-## Try it
+## Install once, run anywhere
+
+```sh
+./install.sh
+```
+
+That builds the binary, drops a `chew` symlink into a directory on your
+PATH (no sudo if you have `~/.local/bin` or `~/bin` writable), and saves
+the repo path so the binary can find its bundled runtime.
+
+After install, open any terminal and type:
+
+```sh
+chew
+```
+
+You'll see CHEW the frog, and a `>` prompt. Type `help` to see what he
+can do, or `install brain` to give him a brain.
+
+You need Go installed to build (https://go.dev/dl/). Future versions
+will ship pre-built binaries.
+
+## Try it without installing
 
 ```sh
 go run ./cmd/chew/chat/repl

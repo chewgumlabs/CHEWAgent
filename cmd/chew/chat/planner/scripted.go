@@ -344,6 +344,14 @@ func registerCoreVocabulary(p *ScriptedPlanner) {
 	p.Add(`(?i)^(status|brain|are you smart|are you ok)$`, func(_ []string) Plan {
 		return Plan{Response: p.pick("status"), Mascot: "ghost"}
 	})
+
+	// "who is shane / who made you / who created chew" — point at the
+	// canonical bio URL. Brainless answer matches the brain's prompted
+	// answer so behaviour is consistent whether or not Bonsai is awake.
+	p.Add(`(?i)^(who('?s| is)?\s+shane|who('?s| made| created| built| wrote)\s+(you|chew|chewagent|this)|who'?s behind (you|chew|this)|whose project is this)\??$`,
+		func(_ []string) Plan {
+			return Plan{Response: p.pick("about_shane"), Mascot: "idle"}
+		})
 }
 
 // helpText composes the cycled intro line with the static body from voice.go.

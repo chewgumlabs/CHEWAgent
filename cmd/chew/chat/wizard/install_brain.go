@@ -92,11 +92,36 @@ func NewInstallBrain() *InstallBrain {
 	}
 }
 
-// repoAnchor picks the directory the brain folder hangs off of. Prefers
-// the binary's own directory (so a packaged CHEW puts brain/ next to
-// itself); falls back to cwd when running under `go run`.
+// repoAnchor picks the directory the brain folder hangs off of.
+//
+// Lookup chain, first hit wins:
+//  1. CHEW_HOME env var (explicit override — useful for tests + power users)
+//  2. ~/.chew-home file written by install.sh (records the repo path so
+//     the symlinked /usr/local/bin/chew binary knows where its bundle is)
+//  3. Resolved exe-dir — works for `go build && ./chew` AND for symlinks
+//     that point back at the repo
+//  4. cwd — works for `go run` (which lives in TMPDIR)
 func repoAnchor() (string, error) {
+	if env := strings.TrimSpace(os.Getenv("CHEW_HOME")); env != "" {
+		if info, err := os.Stat(env); err == nil && info.IsDir() {
+			return env, nil
+		}
+	}
+	if home, err := os.UserHomeDir(); err == nil {
+		if body, err := os.ReadFile(filepath.Join(home, ".chew-home")); err == nil {
+			if path := strings.TrimSpace(string(body)); path != "" {
+				if info, err := os.Stat(path); err == nil && info.IsDir() {
+					return path, nil
+				}
+			}
+		}
+	}
 	if exe, err := os.Executable(); err == nil {
+		// Follow symlinks so `/usr/local/bin/chew → ~/Documents/CHEWAgent/chew`
+		// resolves to the real repo location.
+		if real, err := filepath.EvalSymlinks(exe); err == nil {
+			exe = real
+		}
 		dir := filepath.Dir(exe)
 		if !isTempDir(dir) {
 			return dir, nil

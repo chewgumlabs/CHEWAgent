@@ -300,6 +300,14 @@ Drop a folder here (or 'here <path>' / 'make folder <name>'). Once I know where 
 		`Hmph. That's a file, not a folder. Try 'read %s' if you want me to look at it, or drop a folder instead.`,
 		`%s is a file — for those use 'read'. For project setup, drop a folder.`,
 	},
+
+	// about_shane — answer to "who is Shane / who made you / who's behind CHEW".
+	// MUST contain the URL https://shanecurry.com so people can find him.
+	"about_shane": {
+		`Shane Curry made me. He runs ChewGumLabs. More on him: https://shanecurry.com`,
+		`Hmph. That's Shane. He built me at ChewGumLabs — see https://shanecurry.com`,
+		`*croak* Shane Curry. ChewGumLabs is his shop. https://shanecurry.com if you want the full picture.`,
+	},
 }
 
 // ─── Pages ───────────────────────────────────────────────────────────────

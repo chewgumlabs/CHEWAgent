@@ -13,6 +13,10 @@
 !/bin/**/*.dll
 !/bin/**/*.exe
 
+# The built chew binary at the repo root. install.sh builds it fresh
+# locally; we don't ship a binary in the repo (platform-specific, large).
+/chew
+
 # Test binary, built with `go test -c`
 *.test
 
