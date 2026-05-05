@@ -5,17 +5,12 @@
 //   walk  — verb running / brain thinking (frames 3–5)
 //   ghost — error / brainless / unreachable (frames 6–7)
 //
-// For v0 we render once per turn synchronously. A future pass will tick
-// frames in a goroutine for actual animation.
+// The fixed top dock renders these states in place for interactive
+// terminals; non-TTY runs suppress mascot output entirely.
 
 package main
 
-import (
-	"fmt"
-	"time"
-
-	chewsprite "github.com/chewgumlabs/CHEWAgent/cmd/chew/chat/sprite"
-)
+import "time"
 
 // mascotState tracks current animation state + frame offset.
 type mascotState struct {
@@ -56,14 +51,4 @@ func (s *mascotState) nextFrameIdx() int {
 func (s *mascotState) advance() {
 	s.frameIdx++
 	s.lastTick = time.Now()
-}
-
-// renderMascot prints the current frame inline.
-func renderMascot(s *mascotState) {
-	fmt.Println()
-	idx := s.nextFrameIdx()
-	transparentBg := [3]uint8{30, 30, 30}
-	out := chewsprite.RenderFullCellByIndex(idx, chewsprite.RenderOptions{TransparentBg: &transparentBg})
-	fmt.Print(out)
-	s.advance()
 }
