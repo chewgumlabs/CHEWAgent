@@ -13,9 +13,12 @@
 !/bin/**/*.dll
 !/bin/**/*.exe
 
-# The built chew binary at the repo root. install.sh builds it fresh
-# locally; we don't ship a binary in the repo (platform-specific, large).
+# The chew binary lives in GitHub Releases now (see .github/workflows/
+# release.yml). build-binaries.sh produces them locally for testing,
+# but they don't get committed.
 /chew
+/bin/*/chew
+/bin/*/chew.exe
 
 # Test binary, built with `go test -c`
 *.test
