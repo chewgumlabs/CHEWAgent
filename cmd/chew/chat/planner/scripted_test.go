@@ -147,6 +147,40 @@ func TestScripted_InstallBrainSignalsWizardHandoff(t *testing.T) {
 	}
 }
 
+func TestScripted_MakeProjectAndFolderAreDistinct(t *testing.T) {
+	p := NewScriptedPlanner()
+
+	projectCases := []string{
+		"make project comic tracker",
+		"new project named comic tracker",
+		"make me a project called comic tracker",
+	}
+	for _, in := range projectCases {
+		got := p.Plan(in)
+		if got.LaunchWizard != "create_project" {
+			t.Fatalf("input %q: expected create_project, got %q", in, got.LaunchWizard)
+		}
+		if got.LaunchArgs["name"] != "comic tracker" {
+			t.Fatalf("input %q: expected name comic tracker, got %q", in, got.LaunchArgs["name"])
+		}
+	}
+
+	folderCases := []string{
+		"make folder notes",
+		"new folder named notes",
+		"make me a folder called notes",
+	}
+	for _, in := range folderCases {
+		got := p.Plan(in)
+		if got.LaunchWizard != "create_folder" {
+			t.Fatalf("input %q: expected create_folder, got %q", in, got.LaunchWizard)
+		}
+		if got.LaunchArgs["name"] != "notes" {
+			t.Fatalf("input %q: expected name notes, got %q", in, got.LaunchArgs["name"])
+		}
+	}
+}
+
 func TestScripted_SetFallbackSwapsAndRestores(t *testing.T) {
 	p := NewScriptedPlanner()
 	called := false

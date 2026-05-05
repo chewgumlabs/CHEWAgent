@@ -92,15 +92,17 @@ No brain installed yet. Type 'install brain' to set one up.
 | `git push \| commit \| merge \| reset \| ...` | refused without explicit consent |
 | `force: <command>` | escape hatch to run a mutating command you typed yourself |
 
-### Project (a folder is a project)
+### Project
 
-CHEW works out of a folder you give him. No git terminology required.
+CHEW works out of a project folder you give him. No git terminology
+required.
 
 | command | what it does |
 |---|---|
 | `here <path>` | set the active project folder |
 | (drag a folder onto the chat) | same as `here <path>` |
-| `make folder <name>` | create a fresh folder under `~/Documents/`, `git init` it silently |
+| `make project <name>` | create a project folder under `~/Documents/`, seed GUM/git, and move in |
+| `make folder <name>` | create a plain folder under `~/Documents/` without changing projects |
 | `remember <note>` | record a note in GUM.md's Recent decisions |
 | `forget project` | clear the active folder |
 

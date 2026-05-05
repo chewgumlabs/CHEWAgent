@@ -183,13 +183,30 @@ func registerCoreVocabulary(p *ScriptedPlanner) {
 		}
 	})
 
-	// make folder <name> — create a fresh project folder under ~/Documents/.
-	p.Add(`(?i)^(make|new)\s+(folder|project)\s+(.+)$`, func(m []string) Plan {
+	// make project <name> — create a fresh project folder under ~/Documents/,
+	// seed GUM/git, and move CHEW into it.
+	p.Add(`(?i)^(make|new)\s+(?:me\s+)?(?:a\s+)?project\s+(?:called\s+|named\s+)?(.+)$`, func(m []string) Plan {
 		return Plan{
 			LaunchWizard: "create_project",
-			LaunchArgs:   map[string]string{"name": strings.TrimSpace(m[3])},
+			LaunchArgs:   map[string]string{"name": strings.TrimSpace(m[2])},
 			Mascot:       "walk",
 		}
+	})
+	p.Add(`(?i)^(make|new)\s+(?:me\s+)?(?:a\s+)?project\s*$`, func(_ []string) Plan {
+		return Plan{Response: fmt.Sprintf(p.pick("project_failed"), "give the project a name: 'make project <name>'"), Mascot: "idle"}
+	})
+
+	// make folder <name> — create a plain folder only. This does not set
+	// the active project or initialize GUM/git.
+	p.Add(`(?i)^(make|new)\s+(?:me\s+)?(?:a\s+)?folder\s+(?:called\s+|named\s+)?(.+)$`, func(m []string) Plan {
+		return Plan{
+			LaunchWizard: "create_folder",
+			LaunchArgs:   map[string]string{"name": strings.TrimSpace(m[2])},
+			Mascot:       "walk",
+		}
+	})
+	p.Add(`(?i)^(make|new)\s+(?:me\s+)?(?:a\s+)?folder\s*$`, func(_ []string) Plan {
+		return Plan{Response: fmt.Sprintf(p.pick("project_failed"), "give the folder a name: 'make folder <name>'"), Mascot: "idle"}
 	})
 
 	// forget project — clear the active project and last-project memory.

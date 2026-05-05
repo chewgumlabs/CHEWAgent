@@ -269,14 +269,25 @@ var responsePools = map[string][]string{
 	// project_no_gum — when a project is opened but there's no GUM.md yet.
 	"project_no_gum": {
 		`No GUM.md here yet. I'll write a starter template — fill in the why and I'll remember it next time.`,
-		`Folder's bare. Writing a starter GUM.md so I have somewhere to keep notes.`,
+		`Project's bare. Writing a starter GUM.md so I have somewhere to keep notes.`,
 	},
 
-	// project_created — shown after `make folder X` succeeds.
-	// Slot %s = full path of the created folder.
+	// project_created — shown after `make project X` succeeds.
+	// Slots: %s = project name, %s = full path of the created folder.
 	"project_created": {
-		`Made %s with a starter GUM.md inside. Type 'here %s' to set up shop there.`,
-		`Folder ready at %s. 'here %s' when you want me to move in.`,
+		`Made project '%s' with a starter GUM.md and moved in.
+Stored in folder: %s`,
+		`Project '%s' is ready. I'm in it now.
+Folder: %s`,
+	},
+
+	// folder_created — shown after `make folder X` succeeds.
+	// Slot %s = full path of the created folder.
+	"folder_created": {
+		`Made folder: %s
+Not a project. Use 'make project <name>' when you want me to move in.`,
+		`Folder ready: %s
+Plain folder only. 'make project <name>' sets up GUM and makes it my repo.`,
 	},
 
 	// project_failed — generic project op failure. Slot %s = friendly reason.
@@ -356,7 +367,8 @@ var helpBody = `  read <file>           print file contents
 
   Project (your work folder):
   here <path>           set the active folder; or just drop one in here
-  make folder <name>    create a fresh folder under ~/Documents/
+  make project <name>   create a project folder and move in
+  make folder <name>    create a plain folder under ~/Documents/
   remember <note>       record a note in GUM.md
   forget project        clear the active folder
 

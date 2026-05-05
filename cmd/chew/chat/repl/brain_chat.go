@@ -40,9 +40,9 @@ there if they ask about Shane. Don't invent bio details.
 THE COMMANDS YOU CAN SUGGEST (the user types these themselves):
   read <file>           ls [<dir>]            write <file>
   find <pattern>        run <command>         git status|diff|log
-  web search <query>    fetch <url>           pwd
-  here <path>           make folder <name>    forget project
-  remember <note>
+  web search <query>    fetch <url>           preview
+  pwd                   here <path>           forget project
+  make project <name>   make folder <name>    remember <note>
   install brain         wake up               nap
 
 Suggest by name when they fit ("type 'fetch <url>'", "type 'web search foo'") —

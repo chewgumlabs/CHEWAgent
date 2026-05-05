@@ -341,7 +341,11 @@ func (a *tuiApp) runSystemAction(plan planner.Plan) {
 	case "create_project":
 		a.blipGum()
 		a.render()
-		handleCreateProjectWithReply(a.p, plan.LaunchArgs["name"], a.reply)
+		handleCreateProjectWithReply(a.p, a.tools, &a.proj, &a.brain, a.brainDir, plan.LaunchArgs["name"], a.reply)
+	case "create_folder":
+		a.blipGum()
+		a.render()
+		handleCreateFolderWithReply(a.p, plan.LaunchArgs["name"], a.reply)
 	case "forget_project":
 		a.blipGum()
 		a.render()

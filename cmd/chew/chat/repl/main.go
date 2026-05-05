@@ -165,7 +165,9 @@ func runPlainREPL() {
 			case "open_project":
 				handleOpenProject(p, tools, &proj, &brain, brainDir, plan.LaunchArgs["path"])
 			case "create_project":
-				handleCreateProject(p, plan.LaunchArgs["name"])
+				handleCreateProject(p, tools, &proj, &brain, brainDir, plan.LaunchArgs["name"])
+			case "create_folder":
+				handleCreateFolder(p, plan.LaunchArgs["name"])
 			case "forget_project":
 				handleForgetProject(p, tools, &proj, &brain, brainDir)
 			case "remember_note":
@@ -272,26 +274,20 @@ func handleOpenProjectWithReply(p *planner.ScriptedPlanner, reg *tool.Registry, 
 	proj.Store(pj)
 	reg.SetRoot(pj.Path)
 	_ = project.SaveLast(brainDir, pj.Path)
-
-	// If the brain is awake, refresh its system prompt so the LLM has
-	// the new project's GUM in context. (No model reload — just a fresh
-	// chat session with the updated prompt.)
-	if b := brain.Load(); b != nil {
-		p.SetFallback(brainFallback(b, pj))
-	}
+	refreshBrainProjectContext(p, brain, pj)
 
 	reply(fmt.Sprintf(p.PickVoice("project_opened"), pj.Name, gumStatus))
 }
 
-// handleCreateProject creates a fresh folder under ~/Documents/ with a
-// starter GUM.md inside.
-func handleCreateProject(p *planner.ScriptedPlanner, name string) {
-	handleCreateProjectWithReply(p, name, printReply)
+// handleCreateProject creates a fresh project folder under ~/Documents/,
+// seeds GUM.md/git, and moves CHEW into it immediately.
+func handleCreateProject(p *planner.ScriptedPlanner, reg *tool.Registry, proj *atomic.Pointer[project.Project], brain *atomic.Pointer[wizard.Brain], brainDir, name string) {
+	handleCreateProjectWithReply(p, reg, proj, brain, brainDir, name, printReply)
 }
 
-func handleCreateProjectWithReply(p *planner.ScriptedPlanner, name string, reply func(string)) {
+func handleCreateProjectWithReply(p *planner.ScriptedPlanner, reg *tool.Registry, proj *atomic.Pointer[project.Project], brain *atomic.Pointer[wizard.Brain], brainDir, name string, reply func(string)) {
 	if name == "" {
-		reply(fmt.Sprintf(p.PickVoice("project_failed"), "give the folder a name: 'make folder <name>'"))
+		reply(fmt.Sprintf(p.PickVoice("project_failed"), "give the project a name: 'make project <name>'"))
 		return
 	}
 	home, err := os.UserHomeDir()
@@ -305,7 +301,52 @@ func handleCreateProjectWithReply(p *planner.ScriptedPlanner, name string, reply
 		reply(fmt.Sprintf(p.PickVoice("project_failed"), err.Error()))
 		return
 	}
-	reply(fmt.Sprintf(p.PickVoice("project_created"), pj.Path, pj.Path))
+	proj.Store(pj)
+	reg.SetRoot(pj.Path)
+	_ = project.SaveLast(brainDir, pj.Path)
+	refreshBrainProjectContext(p, brain, pj)
+	reply(fmt.Sprintf(p.PickVoice("project_created"), pj.Name, pj.Path))
+}
+
+// handleCreateFolder creates a plain folder under ~/Documents/. Unlike
+// make project, this does not seed GUM.md, initialize git, or change the
+// active project.
+func handleCreateFolder(p *planner.ScriptedPlanner, name string) {
+	handleCreateFolderWithReply(p, name, printReply)
+}
+
+func handleCreateFolderWithReply(p *planner.ScriptedPlanner, name string, reply func(string)) {
+	if name == "" {
+		reply(fmt.Sprintf(p.PickVoice("project_failed"), "give the folder a name: 'make folder <name>'"))
+		return
+	}
+	home, err := os.UserHomeDir()
+	if err != nil {
+		reply(fmt.Sprintf(p.PickVoice("project_failed"), "couldn't find your home directory"))
+		return
+	}
+	target := filepath.Clean(filepath.Join(home, "Documents", strings.TrimSpace(name)))
+	if _, err := os.Stat(target); err == nil {
+		reply(fmt.Sprintf(p.PickVoice("project_failed"), fmt.Sprintf("folder %s already exists", target)))
+		return
+	} else if !errors.Is(err, os.ErrNotExist) {
+		reply(fmt.Sprintf(p.PickVoice("project_failed"), err.Error()))
+		return
+	}
+	if err := os.MkdirAll(target, 0o755); err != nil {
+		reply(fmt.Sprintf(p.PickVoice("project_failed"), fmt.Sprintf("create folder: %v", err)))
+		return
+	}
+	reply(fmt.Sprintf(p.PickVoice("folder_created"), target))
+}
+
+func refreshBrainProjectContext(p *planner.ScriptedPlanner, brain *atomic.Pointer[wizard.Brain], pj *project.Project) {
+	// If the brain is awake, refresh its system prompt so the LLM has
+	// the new project's GUM in context. (No model reload; just a fresh
+	// chat session with the updated prompt.)
+	if b := brain.Load(); b != nil {
+		p.SetFallback(brainFallback(b, pj))
+	}
 }
 
 // handleRememberNote appends a user-supplied note to GUM.md's Recent
