@@ -93,10 +93,6 @@ func main() {
 			tools.SetRoot(pj.Path)
 			fmt.Println()
 			fmt.Println(fmt.Sprintf(p.PickVoice("project_resumed"), pj.Name))
-			if !pj.GUM.IsEmpty() {
-				fmt.Println()
-				fmt.Println(fmt.Sprintf(p.PickVoice("project_summary"), pj.GUM.Summary()))
-			}
 		}
 	}
 
@@ -280,14 +276,6 @@ func handleOpenProject(p *planner.ScriptedPlanner, reg *tool.Registry, proj *ato
 
 	fmt.Println()
 	fmt.Println(fmt.Sprintf(p.PickVoice("project_opened"), pj.Name, gumStatus))
-	if !pj.GUM.IsEmpty() && pj.HasGUM() {
-		// If the user opened a folder with existing notes, show the summary.
-		summary := pj.GUM.Summary()
-		if summary != "" && len(summary) < 1500 {
-			fmt.Println()
-			fmt.Println(fmt.Sprintf(p.PickVoice("project_summary"), summary))
-		}
-	}
 }
 
 // handleCreateProject creates a fresh folder under ~/Documents/ with a

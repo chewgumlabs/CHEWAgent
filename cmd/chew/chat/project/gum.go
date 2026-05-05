@@ -32,30 +32,63 @@ func (g GUM) IsEmpty() bool {
 	return strings.TrimSpace(g.Raw) == ""
 }
 
-// Summary returns a short preview of the GUM content suitable for the
-// chat REPL's "what we're working on" greeting. Keeps the first non-blank
-// section (after the H1) up to ~600 chars.
+// Summary returns a short preview of meaningful project memory. Starter
+// template instructions and placeholder fields are intentionally ignored
+// so a fresh project does not dump boilerplate into the chat.
 func (g GUM) Summary() string {
 	if g.IsEmpty() {
 		return ""
 	}
-	const max = 600
-	body := strings.TrimSpace(g.Raw)
-	// Skip the H1 if present.
-	lines := strings.Split(body, "\n")
-	out := make([]string, 0, len(lines))
-	skipH1 := strings.HasPrefix(body, "# ")
-	for i, line := range lines {
-		if skipH1 && i == 0 {
+	const max = 420
+	lines := strings.Split(strings.TrimSpace(g.Raw), "\n")
+	out := make([]string, 0, 4)
+	section := ""
+	inPlaceholder := false
+	for i, raw := range lines {
+		line := strings.TrimSpace(raw)
+		if line == "" {
 			continue
 		}
-		out = append(out, line)
+		if i == 0 && strings.HasPrefix(line, "# ") {
+			continue
+		}
+		if inPlaceholder {
+			if strings.Contains(line, ">") {
+				inPlaceholder = false
+			}
+			continue
+		}
+		if strings.HasPrefix(line, "<") {
+			if !strings.Contains(line, ">") {
+				inPlaceholder = true
+			}
+			continue
+		}
+		if isStarterGUMBoilerplate(line) {
+			continue
+		}
+		if strings.HasPrefix(line, "## ") {
+			section = strings.TrimSpace(strings.TrimPrefix(line, "## "))
+			continue
+		}
+		if section != "" {
+			out = append(out, section+": "+line)
+			section = ""
+		} else {
+			out = append(out, line)
+		}
 	}
-	body = strings.TrimSpace(strings.Join(out, "\n"))
+	body := strings.TrimSpace(strings.Join(out, "\n"))
 	if len(body) > max {
 		body = body[:max] + "..."
 	}
 	return body
+}
+
+func isStarterGUMBoilerplate(line string) bool {
+	return strings.Contains(line, "CHEW's project memory") ||
+		strings.Contains(line, "edits it when something important changes") ||
+		strings.Contains(line, "him what you want him to remember")
 }
 
 // ReadGUM returns the GUM.md at path. A missing file is not an error —

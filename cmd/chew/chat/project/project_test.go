@@ -272,3 +272,10 @@ func TestGUMSummary(t *testing.T) {
 		t.Errorf("Summary should skip the H1, got: %s", s)
 	}
 }
+
+func TestGUMSummary_StarterTemplateIsSilent(t *testing.T) {
+	g := NewStarterGUM("fresh")
+	if got := g.Summary(); got != "" {
+		t.Errorf("starter GUM should not produce a noisy summary, got: %s", got)
+	}
+}
