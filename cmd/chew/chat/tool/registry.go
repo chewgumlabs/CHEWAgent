@@ -51,17 +51,23 @@ func NewRegistry() *Registry {
 }
 
 // NewDefault returns a Registry with the standard tool set:
+//
 //   - web_search   DuckDuckGo HTML search
 //   - web_fetch    HTTPS GET + text extraction
-//
-// Other verbs the planner emits (read_file, list_dir, run_command, etc.)
-// are NOT registered yet — they fall through to ErrUnknownTool, which
-// the REPL surfaces as a friendly "I planned this but can't run it yet"
-// message.
+//   - read_file    print a file's contents (1 MB cap)
+//   - list_dir     enumerate a directory (200-entry cap)
+//   - search       walk a tree, regex-match lines (100-hit cap)
+//   - write_file   create a new file; refuses to overwrite
+//   - run_command  exec via sh -c (30s timeout, 8 KB output cap)
 func NewDefault() *Registry {
 	r := NewRegistry()
 	r.Register(&WebSearch{})
 	r.Register(&WebFetch{})
+	r.Register(&ReadFile{})
+	r.Register(&ListDir{})
+	r.Register(&Search{})
+	r.Register(&WriteFile{})
+	r.Register(&RunCommand{})
 	return r
 }
 

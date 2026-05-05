@@ -65,9 +65,10 @@ func TestRegistry_DispatchPropagatesToolError(t *testing.T) {
 	}
 }
 
-func TestRegistry_NewDefaultHasWebTools(t *testing.T) {
+func TestRegistry_NewDefaultHasAllStandardTools(t *testing.T) {
 	r := NewDefault()
-	for _, name := range []string{"web_search", "web_fetch"} {
+	want := []string{"web_search", "web_fetch", "read_file", "list_dir", "search", "write_file", "run_command"}
+	for _, name := range want {
 		if !r.Has(name) {
 			t.Errorf("NewDefault should register %q", name)
 		}

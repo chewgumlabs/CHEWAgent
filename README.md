@@ -58,11 +58,12 @@ This is **v0**, which means:
   clone works with zero installs. Other platforms fall back to (a) the
   per-user runtime cache at `<repo>/brain/runtime/`, (b) `llama-server`
   on PATH, or (c) auto-fetch from llama.cpp's GitHub releases.
-- ✅ `web_search` and `web_fetch` are wired through the tool registry
-  (DuckDuckGo HTML, no account, fully offline-buildable thanks to
-  vendored deps).
-- ⚠️ Other verbs (`read_file`, `run_command`, `list_dir`, etc.) get
-  *planned* but not *executed* yet — verb dispatch is incremental.
+- ✅ Brain auto-detect: subsequent REPL launches spawn the installed
+  brain automatically — no need to re-run `install brain`.
+- ✅ All standard verbs are wired and execute: `read_file`, `list_dir`,
+  `search`, `write_file`, `run_command`, `web_search`, `web_fetch`.
+  Plus the safety pattern: read-only git verbs flow direct, mutating
+  ones require `force:` prefix.
 - ⚠️ Linux + Windows runtime bundles are not in the repo yet; they'll
   auto-fetch on first install instead.
 
