@@ -1,8 +1,9 @@
 // chew chat REPL — public-facing chat shell.
 //
-// Stdlib-only at the application layer. Reads stdin, plans via
-// ScriptedPlanner (deterministic regex vocabulary), dispatches verbs
-// through the tool registry, and keeps CHEW's state in sync with the work.
+// Reads stdin, plans via ScriptedPlanner (deterministic regex vocabulary),
+// dispatches verbs through the tool registry, and chooses the safest
+// terminal presentation available: a fixed-header TUI for interactive
+// terminals, plain text for pipes and fallback sessions.
 //
 // Brain lifecycle:
 //   - On startup we CHECK whether Bonsai is installed (cheap stat) but
@@ -37,11 +38,21 @@ import (
 )
 
 func main() {
+	if shouldRunTUI() {
+		if err := runTUI(); err == nil {
+			return
+		}
+	}
+	runPlainREPL()
+}
+
+func runPlainREPL() {
 	p := planner.NewScriptedPlanner()
 	tools := tool.NewDefault()
 	state := newMascotState("idle")
 	scanner := bufio.NewScanner(os.Stdin)
 	scanner.Buffer(make([]byte, 0, 1024), 1024*1024) // big buffer for pasted input
+	repairTerminalViewport()
 
 	// brain is held in an atomic so the signal handler can read it
 	// without racing the main goroutine that mutates it on wake/nap.
@@ -180,46 +191,47 @@ func main() {
 // handleWakeBrain spawns the brain on demand. Idempotent: a no-op if the
 // brain is already loaded.
 func handleWakeBrain(p *planner.ScriptedPlanner, brain *atomic.Pointer[wizard.Brain], proj *atomic.Pointer[project.Project]) {
+	handleWakeBrainWithReply(p, brain, proj, printReply)
+}
+
+func handleWakeBrainWithReply(p *planner.ScriptedPlanner, brain *atomic.Pointer[wizard.Brain], proj *atomic.Pointer[project.Project], reply func(string)) {
 	if brain.Load() != nil {
-		fmt.Println()
-		fmt.Println(p.PickVoice("brain_already_awake"))
+		reply(p.PickVoice("brain_already_awake"))
 		return
 	}
 	state, _ := wizard.CheckBrain()
 	if state != wizard.BrainNapping {
-		fmt.Println()
-		fmt.Println(p.PickVoice("brain_not_installed"))
+		reply(p.PickVoice("brain_not_installed"))
 		return
 	}
-	fmt.Println()
-	fmt.Println(p.PickVoice("brain_waking"))
+	reply(p.PickVoice("brain_waking"))
 	newBrain, err := wizard.WakeBrain()
 	if err != nil {
-		fmt.Println()
-		fmt.Printf(p.PickVoice("brain_wake_failed")+"\n", summariseSpawnErr(err))
+		reply(fmt.Sprintf(p.PickVoice("brain_wake_failed"), summariseSpawnErr(err)))
 		return
 	}
 	brain.Store(newBrain)
 	// Pass the active project (if any) to the brain so free-form
 	// questions land in the right context with stage-aware instructions.
 	p.SetFallback(brainFallback(newBrain, proj.Load()))
-	fmt.Println()
-	fmt.Println(p.PickVoice("brain_awake"))
+	reply(p.PickVoice("brain_awake"))
 }
 
 // handleNapBrain stops the running brain and restores the brainless
 // fallback. Idempotent.
 func handleNapBrain(p *planner.ScriptedPlanner, brain *atomic.Pointer[wizard.Brain]) {
+	handleNapBrainWithReply(p, brain, printReply)
+}
+
+func handleNapBrainWithReply(p *planner.ScriptedPlanner, brain *atomic.Pointer[wizard.Brain], reply func(string)) {
 	b := brain.Swap(nil)
 	if b == nil {
-		fmt.Println()
-		fmt.Println(p.PickVoice("brain_already_napping"))
+		reply(p.PickVoice("brain_already_napping"))
 		return
 	}
 	_ = b.Stop()
 	p.SetFallback(nil) // restore default brainless fallback
-	fmt.Println()
-	fmt.Println(p.PickVoice("brain_napping"))
+	reply(p.PickVoice("brain_napping"))
 }
 
 // handleOpenProject sets up shop in the given folder. The folder must
@@ -227,9 +239,12 @@ func handleNapBrain(p *planner.ScriptedPlanner, brain *atomic.Pointer[wizard.Bra
 // to read next time. If the brain is currently awake, its system prompt
 // is refreshed so the new project's GUM lands in context.
 func handleOpenProject(p *planner.ScriptedPlanner, reg *tool.Registry, proj *atomic.Pointer[project.Project], brain *atomic.Pointer[wizard.Brain], brainDir, path string) {
+	handleOpenProjectWithReply(p, reg, proj, brain, brainDir, path, printReply)
+}
+
+func handleOpenProjectWithReply(p *planner.ScriptedPlanner, reg *tool.Registry, proj *atomic.Pointer[project.Project], brain *atomic.Pointer[wizard.Brain], brainDir, path string, reply func(string)) {
 	if path == "" {
-		fmt.Println()
-		fmt.Println(fmt.Sprintf(p.PickVoice("project_failed"), "no path given"))
+		reply(fmt.Sprintf(p.PickVoice("project_failed"), "no path given"))
 		return
 	}
 	pj, err := project.Open(path)
@@ -237,12 +252,10 @@ func handleOpenProject(p *planner.ScriptedPlanner, reg *tool.Registry, proj *ato
 		// If the path is a file (not a folder), give a specific hint.
 		info, statErr := os.Stat(strings.Trim(path, `'"`))
 		if statErr == nil && !info.IsDir() {
-			fmt.Println()
-			fmt.Println(fmt.Sprintf(p.PickVoice("project_path_is_file"), filepath.Base(path)))
+			reply(fmt.Sprintf(p.PickVoice("project_path_is_file"), filepath.Base(path)))
 			return
 		}
-		fmt.Println()
-		fmt.Println(fmt.Sprintf(p.PickVoice("project_failed"), err.Error()))
+		reply(fmt.Sprintf(p.PickVoice("project_failed"), err.Error()))
 		return
 	}
 	gumStatus := ""
@@ -267,33 +280,32 @@ func handleOpenProject(p *planner.ScriptedPlanner, reg *tool.Registry, proj *ato
 		p.SetFallback(brainFallback(b, pj))
 	}
 
-	fmt.Println()
-	fmt.Println(fmt.Sprintf(p.PickVoice("project_opened"), pj.Name, gumStatus))
+	reply(fmt.Sprintf(p.PickVoice("project_opened"), pj.Name, gumStatus))
 }
 
 // handleCreateProject creates a fresh folder under ~/Documents/ with a
 // starter GUM.md inside.
 func handleCreateProject(p *planner.ScriptedPlanner, name string) {
+	handleCreateProjectWithReply(p, name, printReply)
+}
+
+func handleCreateProjectWithReply(p *planner.ScriptedPlanner, name string, reply func(string)) {
 	if name == "" {
-		fmt.Println()
-		fmt.Println(fmt.Sprintf(p.PickVoice("project_failed"), "give the folder a name: 'make folder <name>'"))
+		reply(fmt.Sprintf(p.PickVoice("project_failed"), "give the folder a name: 'make folder <name>'"))
 		return
 	}
 	home, err := os.UserHomeDir()
 	if err != nil {
-		fmt.Println()
-		fmt.Println(fmt.Sprintf(p.PickVoice("project_failed"), "couldn't find your home directory"))
+		reply(fmt.Sprintf(p.PickVoice("project_failed"), "couldn't find your home directory"))
 		return
 	}
 	target := filepath.Join(home, "Documents", strings.TrimSpace(name))
 	pj, err := project.Create(target)
 	if err != nil {
-		fmt.Println()
-		fmt.Println(fmt.Sprintf(p.PickVoice("project_failed"), err.Error()))
+		reply(fmt.Sprintf(p.PickVoice("project_failed"), err.Error()))
 		return
 	}
-	fmt.Println()
-	fmt.Println(fmt.Sprintf(p.PickVoice("project_created"), pj.Path, pj.Path))
+	reply(fmt.Sprintf(p.PickVoice("project_created"), pj.Path, pj.Path))
 }
 
 // handleRememberNote appends a user-supplied note to GUM.md's Recent
@@ -301,20 +313,21 @@ func handleCreateProject(p *planner.ScriptedPlanner, name string) {
 // GUM and (if the brain is awake) the planner fallback so the brain sees
 // the updated project memory on the next turn.
 func handleRememberNote(p *planner.ScriptedPlanner, proj *atomic.Pointer[project.Project], brain *atomic.Pointer[wizard.Brain], note string) {
+	handleRememberNoteWithReply(p, proj, brain, note, printReply)
+}
+
+func handleRememberNoteWithReply(p *planner.ScriptedPlanner, proj *atomic.Pointer[project.Project], brain *atomic.Pointer[wizard.Brain], note string, reply func(string)) {
 	pj := proj.Load()
 	if pj == nil {
-		fmt.Println()
-		fmt.Println(p.PickVoice("remember_no_project"))
+		reply(p.PickVoice("remember_no_project"))
 		return
 	}
 	if strings.TrimSpace(note) == "" {
-		fmt.Println()
-		fmt.Println(p.PickVoice("remember_empty"))
+		reply(p.PickVoice("remember_empty"))
 		return
 	}
 	if err := project.AppendDecision(pj.GUMPath(), note); err != nil {
-		fmt.Println()
-		fmt.Println(fmt.Sprintf(p.PickVoice("project_failed"), err.Error()))
+		reply(fmt.Sprintf(p.PickVoice("project_failed"), err.Error()))
 		return
 	}
 	// Refresh in-memory GUM so subsequent commands see the new content.
@@ -326,22 +339,24 @@ func handleRememberNote(p *planner.ScriptedPlanner, proj *atomic.Pointer[project
 	if b := brain.Load(); b != nil {
 		p.SetFallback(brainFallback(b, pj))
 	}
-	fmt.Println()
-	fmt.Println(p.PickVoice("remember_ok"))
+	reply(p.PickVoice("remember_ok"))
 }
 
 // handleForgetProject clears the active project and the saved last-project.
 // If the brain is awake, its system prompt is refreshed without project
 // context — the brain forgets the project the same moment the chat does.
 func handleForgetProject(p *planner.ScriptedPlanner, reg *tool.Registry, proj *atomic.Pointer[project.Project], brain *atomic.Pointer[wizard.Brain], brainDir string) {
+	handleForgetProjectWithReply(p, reg, proj, brain, brainDir, printReply)
+}
+
+func handleForgetProjectWithReply(p *planner.ScriptedPlanner, reg *tool.Registry, proj *atomic.Pointer[project.Project], brain *atomic.Pointer[wizard.Brain], brainDir string, reply func(string)) {
 	proj.Store(nil)
 	reg.SetRoot("")
 	_ = project.ClearLast(brainDir)
 	if b := brain.Load(); b != nil {
 		p.SetFallback(brainFallback(b, nil))
 	}
-	fmt.Println()
-	fmt.Println(p.PickVoice("project_forgotten"))
+	reply(p.PickVoice("project_forgotten"))
 }
 
 // summariseSpawnErr converts a wake error into a short friendly phrase.
@@ -395,10 +410,21 @@ func runInstallBrainWizard(scanner *bufio.Scanner) *wizard.Brain {
 }
 
 func printBrainlessIntro() {
-	fmt.Println("┌──────────────────────────────────────────────────────┐")
-	fmt.Println("│ CHEW chat                                            │")
-	fmt.Println("│ Commands: read, ls, write, find, run, git, web,      │")
-	fmt.Println("│ fetch, remember, install brain, wake up, nap,        │")
-	fmt.Println("│ help, quit.                                          │")
-	fmt.Println("└──────────────────────────────────────────────────────┘")
+	fmt.Println(brainlessIntroText())
+}
+
+func printReply(s string) {
+	fmt.Println()
+	fmt.Println(s)
+}
+
+func brainlessIntroText() string {
+	return strings.Join([]string{
+		"┌──────────────────────────────────────────────────────┐",
+		"│ CHEW chat                                            │",
+		"│ Commands: read, ls, write, find, run, git, web,      │",
+		"│ fetch, remember, install brain, wake up, nap,        │",
+		"│ help, quit.                                          │",
+		"└──────────────────────────────────────────────────────┘",
+	}, "\n")
 }

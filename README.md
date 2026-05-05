@@ -39,7 +39,7 @@ local `go build` only if your platform isn't pre-built.
 
 ```
 $ chew
-[CHEW opens the chat]
+[CHEW opens a terminal chat with the frog fixed at the top]
 
 No brain installed yet. Type 'install brain' to set one up.
 ┌──────────────────────────────────────────────────────┐

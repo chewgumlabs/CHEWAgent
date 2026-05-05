@@ -9,7 +9,8 @@ README](../../../README.md).
 `chat/repl/` is the binary entrypoint. `go run ./cmd/chew/chat/repl`
 (or `chew` after `./install.sh`) starts the loop:
 
-1. Start the chat shell.
+1. Start the fixed-header terminal UI when stdin/stdout are interactive;
+   use plain text mode for pipes or `CHEW_PLAIN=1`.
 2. Check brain state (installed? napping? not installed?).
 3. Resume the last project from `<repo>/brain/last-project.txt` if any.
 4. Prompt. On each input:
@@ -85,9 +86,12 @@ assets/    Source art. CHEW_NES.png + CHEW_NES.json (Aseprite export),
 | 3–5 | walk | verb running / brain thinking |
 | 6–7 | ghost | error / brain unreachable / no brain installed |
 
-`mascotState.set(state)` updates the current animation state. The REPL
-does not currently render the sprite into the chat transcript; preserving
-readable command output and normal terminal scrollback comes first.
+`mascotState.set(state)` updates the current animation state. Interactive
+sessions render CHEW in a fixed 16-row TUI header with a scrollable dialog
+viewport below it and an input row at the bottom. The TUI owns the viewport
+instead of using terminal scroll regions, so resizing the window shows more
+or less dialog without covering text. Piped output and `CHEW_PLAIN=1`
+stay plain text.
 
 The full-cell renderer is two ANSI background-colored spaces per source
 pixel, so a 16×16 sprite is 32×16 character cells — readable in any

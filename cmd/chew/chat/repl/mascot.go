@@ -5,9 +5,9 @@
 //   walk  — verb running / brain thinking (frames 3–5)
 //   ghost — error / brainless / unreachable (frames 6–7)
 //
-// The REPL currently tracks mascot state but does not render the sprite
-// into the chat transcript. Keeping the terminal scrollback readable
-// takes priority over visual presence.
+// The REPL tracks mascot state separately from the output surface. The
+// TUI renderer consumes it for the fixed header; plain text mode keeps
+// output script-friendly and does not draw the sprite.
 
 package main
 
@@ -48,8 +48,7 @@ func (s *mascotState) nextFrameIdx() int {
 	}
 }
 
-// advance ticks the frame index forward. Kept for sprite/testbed callers
-// and future renderers that do not damage terminal scrollback.
+// advance ticks the frame index forward.
 func (s *mascotState) advance() {
 	s.frameIdx++
 	s.lastTick = time.Now()
