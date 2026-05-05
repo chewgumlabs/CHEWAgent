@@ -25,6 +25,7 @@ type Search struct {
 	MaxMatches  int // 0 = 100
 	MaxFiles    int // 0 = 1000
 	MaxFileSize int64
+	Root        *string // if non-nil, resolve relative paths against this root
 }
 
 // Name implements Tool.
@@ -40,6 +41,10 @@ func (s *Search) Execute(params map[string]any) (Result, error) {
 	target := stringParam(params, "path")
 	if target == "" {
 		target = "."
+	}
+	target, err := resolveToolPath(s.Root, target)
+	if err != nil {
+		return Result{}, err
 	}
 
 	// Try regex; if it doesn't compile, fall back to literal substring

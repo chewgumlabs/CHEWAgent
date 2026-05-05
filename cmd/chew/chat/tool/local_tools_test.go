@@ -237,3 +237,206 @@ func TestRunCommand_TruncatesLargeOutput(t *testing.T) {
 		t.Errorf("expected truncation note, got tail: %q", res.Output[len(res.Output)-100:])
 	}
 }
+
+// ----- project-scoped tool tests -----
+//
+// These tests verify that after setting a project root, relative paths
+// resolve against the root, pwd reports the root, and absolute paths
+// still bypass the root.
+
+func TestResolveToolPath_RelativeFromRoot(t *testing.T) {
+	root := "/tmp/project"
+	got, err := resolveToolPath(&root, "src/main.go")
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if got != "/tmp/project/src/main.go" {
+		t.Errorf("expected /tmp/project/src/main.go, got %q", got)
+	}
+}
+
+func TestResolveToolPath_DotResolvesToRoot(t *testing.T) {
+	root := "/tmp/project"
+	got, err := resolveToolPath(&root, ".")
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if got != "/tmp/project" {
+		t.Errorf("expected /tmp/project, got %q", got)
+	}
+}
+
+func TestResolveToolPath_AbsolutePassesThrough(t *testing.T) {
+	root := "/tmp/project"
+	got, err := resolveToolPath(&root, "/absolute/path")
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if got != "/absolute/path" {
+		t.Errorf("absolute path should pass through, got %q", got)
+	}
+}
+
+func TestResolveToolPath_NilRootPassesThrough(t *testing.T) {
+	got, err := resolveToolPath(nil, "relative/path")
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if got != "relative/path" {
+		t.Errorf("nil root should return path unchanged, got %q", got)
+	}
+}
+
+func TestResolveToolPath_EmptyRootPassesThrough(t *testing.T) {
+	root := ""
+	got, err := resolveToolPath(&root, "relative/path")
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if got != "relative/path" {
+		t.Errorf("empty root should return path unchanged, got %q", got)
+	}
+}
+
+func TestResolveToolPath_RejectsEscape(t *testing.T) {
+	root := "/tmp/project"
+	_, err := resolveToolPath(&root, "../../etc/passwd")
+	if err == nil {
+		t.Errorf("path traversal outside root should be rejected")
+	}
+}
+
+func TestReadFile_RelativeWithRoot(t *testing.T) {
+	tmp := t.TempDir()
+	if err := os.WriteFile(filepath.Join(tmp, "data.txt"), []byte("project data\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	root := tmp
+	tool := &ReadFile{Root: &root}
+	res, err := tool.Execute(map[string]any{"path": "data.txt"})
+	if err != nil {
+		t.Fatalf("execute: %v", err)
+	}
+	if !strings.Contains(res.Output, "project data") {
+		t.Errorf("expected file contents from project root, got: %s", res.Output)
+	}
+}
+
+func TestReadFile_AbsoluteBypassesRoot(t *testing.T) {
+	abs := filepath.Join(t.TempDir(), "abs.txt")
+	if err := os.WriteFile(abs, []byte("absolute\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	root := "/some/other/root"
+	tool := &ReadFile{Root: &root}
+	res, err := tool.Execute(map[string]any{"path": abs})
+	if err != nil {
+		t.Fatalf("execute: %v", err)
+	}
+	if !strings.Contains(res.Output, "absolute") {
+		t.Errorf("absolute path should bypass root, got: %s", res.Output)
+	}
+}
+
+func TestListDir_RelativeWithRoot(t *testing.T) {
+	tmp := t.TempDir()
+	_ = os.WriteFile(filepath.Join(tmp, "file.txt"), []byte("x"), 0o644)
+	_ = os.Mkdir(filepath.Join(tmp, "subdir"), 0o755)
+	root := tmp
+	tool := &ListDir{Root: &root}
+	res, err := tool.Execute(map[string]any{"path": "."})
+	if err != nil {
+		t.Fatalf("execute: %v", err)
+	}
+	if !strings.Contains(res.Output, "file.txt") || !strings.Contains(res.Output, "subdir") {
+		t.Errorf("expected project root contents, got: %s", res.Output)
+	}
+}
+
+func TestWriteFile_RelativeWithRoot(t *testing.T) {
+	tmp := t.TempDir()
+	root := tmp
+	tool := &WriteFile{Root: &root}
+	_, err := tool.Execute(map[string]any{"path": "new.txt", "content": "hello root"})
+	if err != nil {
+		t.Fatalf("execute: %v", err)
+	}
+	body, err := os.ReadFile(filepath.Join(tmp, "new.txt"))
+	if err != nil {
+		t.Fatalf("file should exist in project root: %v", err)
+	}
+	if string(body) != "hello root" {
+		t.Errorf("expected 'hello root', got %q", body)
+	}
+}
+
+func TestSearch_RelativeWithRoot(t *testing.T) {
+	tmp := t.TempDir()
+	_ = os.WriteFile(filepath.Join(tmp, "code.go"), []byte("func main() {}\n"), 0o644)
+	root := tmp
+	tool := &Search{Root: &root}
+	res, err := tool.Execute(map[string]any{"pattern": "func main", "path": "."})
+	if err != nil {
+		t.Fatalf("execute: %v", err)
+	}
+	if !strings.Contains(res.Output, "code.go") {
+		t.Errorf("expected match in project root, got: %s", res.Output)
+	}
+}
+
+func TestRunCommand_PwdReportsRoot(t *testing.T) {
+	tmp := t.TempDir()
+	root := tmp
+	tool := &RunCommand{Root: &root}
+	// pwd -P avoids symlink differences (macOS /var -> /private/var).
+	res, _ := tool.Execute(map[string]any{"command": "pwd -P"})
+	realTmp, _ := filepath.EvalSymlinks(tmp)
+	if !strings.Contains(res.Output, realTmp) {
+		t.Errorf("pwd should report project root %q, got: %s", realTmp, res.Output)
+	}
+}
+
+func TestRunCommand_CmdDirFromRoot(t *testing.T) {
+	tmp := t.TempDir()
+	_ = os.WriteFile(filepath.Join(tmp, "marker.txt"), []byte("found it"), 0o644)
+	root := tmp
+	tool := &RunCommand{Root: &root}
+	res, _ := tool.Execute(map[string]any{"command": "cat marker.txt"})
+	if !strings.Contains(res.Output, "found it") {
+		t.Errorf("command should see files in project root, got: %s", res.Output)
+	}
+}
+
+func TestRegistry_SetRoot_Integration(t *testing.T) {
+	tmp := t.TempDir()
+	_ = os.WriteFile(filepath.Join(tmp, "test.txt"), []byte("from root\n"), 0o644)
+
+	r := NewDefault()
+	r.SetRoot(tmp)
+
+	// Read via relative path should find the file in the root.
+	res, err := r.Dispatch("read_file", map[string]any{"path": "test.txt"})
+	if err != nil {
+		t.Fatalf("dispatch read_file: %v", err)
+	}
+	if !strings.Contains(res.Output, "from root") {
+		t.Errorf("expected file contents from root, got: %s", res.Output)
+	}
+
+	// pwd should report the root.
+	res, err = r.Dispatch("run_command", map[string]any{"command": "pwd -P"})
+	if err != nil {
+		t.Fatalf("dispatch pwd: %v", err)
+	}
+	realTmp, _ := filepath.EvalSymlinks(tmp)
+	if !strings.Contains(res.Output, realTmp) {
+		t.Errorf("pwd should report root %q, got: %s", realTmp, res.Output)
+	}
+
+	// Clear root — pwd should no longer report the tmp dir.
+	r.SetRoot("")
+	res, _ = r.Dispatch("run_command", map[string]any{"command": "pwd -P"})
+	if strings.Contains(res.Output, realTmp) {
+		t.Errorf("after clearing root, pwd should not report old root: %s", res.Output)
+	}
+}

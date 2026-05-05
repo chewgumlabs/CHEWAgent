@@ -266,6 +266,41 @@ func TestScripted_NapBrainTriggers(t *testing.T) {
 	}
 }
 
+func TestScripted_RememberNoteTriggersWizard(t *testing.T) {
+	p := NewScriptedPlanner()
+	got := p.Plan("remember use Go for the prototype")
+	if got.LaunchWizard != "remember_note" {
+		t.Errorf("expected LaunchWizard=remember_note, got %q", got.LaunchWizard)
+	}
+	if got.LaunchArgs["note"] != "use Go for the prototype" {
+		t.Errorf("expected note='use Go for the prototype', got %q", got.LaunchArgs["note"])
+	}
+	if got.Mascot != "walk" {
+		t.Errorf("expected mascot=walk, got %s", got.Mascot)
+	}
+}
+
+func TestScripted_RememberBareShowsError(t *testing.T) {
+	p := NewScriptedPlanner()
+	got := p.Plan("remember")
+	if got.LaunchWizard != "" {
+		t.Errorf("bare remember should not launch a wizard, got %q", got.LaunchWizard)
+	}
+	if got.Response == "" {
+		t.Errorf("bare remember should produce an error response")
+	}
+}
+
+func TestScripted_RememberCaseInsensitive(t *testing.T) {
+	p := NewScriptedPlanner()
+	for _, in := range []string{"Remember picked SQLite", "REMEMBER picked SQLite"} {
+		got := p.Plan(in)
+		if got.LaunchWizard != "remember_note" {
+			t.Errorf("input %q: expected LaunchWizard=remember_note, got %q", in, got.LaunchWizard)
+		}
+	}
+}
+
 func TestScripted_PickVoice(t *testing.T) {
 	// PickVoice should hand out frog-flavored variants from the named pool
 	// in round-robin order. Empty for unknown keys.

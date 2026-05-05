@@ -95,6 +95,9 @@ func AppendDecision(path, bullet string) error {
 	dated := fmt.Sprintf("- %s — %s", time.Now().Format("2006-01-02"), strings.TrimSpace(bullet))
 	content := string(body)
 	const heading = "## Recent decisions"
+	const placeholder = "<dated entries. CHEW appends here when significant choices are made.>"
+	content = strings.Replace(content, placeholder+"\n", "", 1)
+	content = strings.Replace(content, placeholder, "", 1)
 	if strings.Contains(content, heading) {
 		// Insert just under the heading.
 		content = strings.Replace(content, heading+"\n", heading+"\n"+dated+"\n", 1)

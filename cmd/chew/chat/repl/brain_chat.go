@@ -42,6 +42,7 @@ THE COMMANDS YOU CAN SUGGEST (the user types these themselves):
   find <pattern>        run <command>         git status|diff|log
   web search <query>    fetch <url>           pwd
   here <path>           make folder <name>    forget project
+  remember <note>
   install brain         wake up               nap
 
 Suggest by name when they fit ("type 'fetch <url>'", "type 'web search foo'") —

@@ -26,6 +26,9 @@ cd CHEWAgent
 and drops it as `~/.local/bin/chew` (or wherever's writable on your PATH —
 no sudo). Open any terminal, type `chew`, you're in.
 
+When working from this checkout, use `./install.sh --local` to rebuild
+and reinstall the `chew` command from the current source tree.
+
 **Supported platforms:** macOS (Apple Silicon + Intel), Linux (x64 + ARM64),
 Windows (x64). No Go required at install time. `install.sh` falls back to
 local `go build` only if your platform isn't pre-built.
@@ -42,7 +45,8 @@ No brain installed yet. Type 'install brain' to set one up.
 ┌──────────────────────────────────────────────────────┐
 │ CHEW chat                                            │
 │ Commands: read, ls, write, find, run, git, web,      │
-│ fetch, install brain, wake up, nap, help, quit.      │
+│ fetch, remember, install brain, wake up, nap,        │
+│ help, quit.                                          │
 └──────────────────────────────────────────────────────┘
 
 > install brain
@@ -94,6 +98,7 @@ CHEW works out of a folder you give him. No git terminology required.
 | `here <path>` | set the active project folder |
 | (drag a folder onto the chat) | same as `here <path>` |
 | `make folder <name>` | create a fresh folder under `~/Documents/`, `git init` it silently |
+| `remember <note>` | record a note in GUM.md's Recent decisions |
 | `forget project` | clear the active folder |
 
 Each project carries a **`GUM.md`** — CHEW's per-project memory. He
@@ -110,8 +115,9 @@ to remember.
 | `nap` | stop Bonsai, free memory |
 
 The brain dies cleanly with the REPL — Ctrl+C, terminal close, normal
-quit, all handled. A hard kill (e.g. `kill -9`) leaves a pidfile; the
-next CHEW launch reads it and stops the orphan.
+quit, all handled. A hard kill (e.g. `kill -9`) leaves a metadata file;
+the next CHEW launch reads it, skips any brain owned by another active
+CHEW session, and stops only genuine orphans.
 
 ---
 

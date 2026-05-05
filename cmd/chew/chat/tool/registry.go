@@ -19,6 +19,7 @@ package tool
 import (
 	"errors"
 	"fmt"
+	"path/filepath"
 	"sort"
 	"strings"
 )
@@ -42,6 +43,7 @@ type Result struct {
 // Registry holds a name->Tool map and dispatches verbs.
 type Registry struct {
 	tools map[string]Tool
+	root  string // active project root; empty means process cwd
 }
 
 // NewRegistry creates an empty Registry. Use NewDefault() to get one
@@ -63,11 +65,11 @@ func NewDefault() *Registry {
 	r := NewRegistry()
 	r.Register(&WebSearch{})
 	r.Register(&WebFetch{})
-	r.Register(&ReadFile{})
-	r.Register(&ListDir{})
-	r.Register(&Search{})
-	r.Register(&WriteFile{})
-	r.Register(&RunCommand{})
+	r.Register(&ReadFile{Root: &r.root})
+	r.Register(&ListDir{Root: &r.root})
+	r.Register(&Search{Root: &r.root})
+	r.Register(&WriteFile{Root: &r.root})
+	r.Register(&RunCommand{Root: &r.root})
 	return r
 }
 
@@ -75,6 +77,16 @@ func NewDefault() *Registry {
 // the same name. Safe to call before Dispatch starts.
 func (r *Registry) Register(t Tool) {
 	r.tools[t.Name()] = t
+}
+
+// SetRoot sets the active project root for path resolution and command
+// execution. Pass "" to clear (revert to process cwd).
+func (r *Registry) SetRoot(path string) {
+	if path == "" {
+		r.root = ""
+		return
+	}
+	r.root = filepath.Clean(path)
 }
 
 // Has reports whether a tool by that name is registered.
@@ -130,4 +142,18 @@ func stringParam(params map[string]any, key string) string {
 		return ""
 	}
 	return strings.TrimSpace(s)
+}
+
+// resolveToolPath resolves a relative path against the given root.
+// Returns the path unchanged if root is nil/empty or path is absolute.
+// Returns an error if the resolved path would escape the root.
+func resolveToolPath(root *string, path string) (string, error) {
+	if root == nil || *root == "" || path == "" || filepath.IsAbs(path) {
+		return path, nil
+	}
+	resolved := filepath.Clean(filepath.Join(*root, path))
+	if resolved != *root && !strings.HasPrefix(resolved, *root+string(filepath.Separator)) {
+		return "", fmt.Errorf("path %q resolves outside the project root", path)
+	}
+	return resolved, nil
 }

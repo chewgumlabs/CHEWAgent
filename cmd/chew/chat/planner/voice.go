@@ -291,6 +291,30 @@ var responsePools = map[string][]string{
 		`%s is a file — for those use 'read'. For project setup, drop a folder.`,
 	},
 
+	// remember_ok — confirmation after recording a note in GUM.md.
+	// No slots.
+	"remember_ok": {
+		`Noted. Wrote that to GUM.md. *croak*`,
+		`Hmph. Remembered. GUM.md updated.`,
+		`Written down in GUM.md.`,
+	},
+
+	// remember_no_project — user tried to remember without an active project.
+	// No slots.
+	"remember_no_project": {
+		`Hmph. No project open — nowhere to write. Use 'here <path>' first.`,
+		`Remember what? I don't have a folder open. 'here <path>' first.`,
+		`No project, no memory. Open a folder first.`,
+	},
+
+	// remember_empty — user typed 'remember' with no note.
+	// No slots.
+	"remember_empty": {
+		`Hmph. Remember what? Give me something: 'remember <note>'.`,
+		`That's an empty thought. Try 'remember <your note here>'.`,
+		`*croak* You said nothing. 'remember picked Go for the backend' — like that.`,
+	},
+
 	// about_shane — answer to "who is Shane / who made you / who's behind CHEW".
 	// MUST contain the URL https://shanecurry.com so people can find him.
 	"about_shane": {
@@ -322,6 +346,7 @@ var helpBody = `  read <file>           print file contents
   Project (your work folder):
   here <path>           set the active folder; or just drop one in here
   make folder <name>    create a fresh folder under ~/Documents/
+  remember <note>       record a note in GUM.md
   forget project        clear the active folder
 
   Brain (the LLM):

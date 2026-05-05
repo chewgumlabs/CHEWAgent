@@ -14,7 +14,9 @@ import (
 )
 
 // WriteFile creates a file. Refuses to overwrite.
-type WriteFile struct{}
+type WriteFile struct {
+	Root *string // if non-nil, resolve relative paths against this root
+}
 
 // Name implements Tool.
 func (w *WriteFile) Name() string { return "write_file" }
@@ -25,6 +27,10 @@ func (w *WriteFile) Execute(params map[string]any) (Result, error) {
 	path := stringParam(params, "path")
 	if path == "" {
 		return Result{}, errors.New("write_file requires a 'path' param")
+	}
+	path, err := resolveToolPath(w.Root, path)
+	if err != nil {
+		return Result{}, err
 	}
 	content := stringParam(params, "content")
 

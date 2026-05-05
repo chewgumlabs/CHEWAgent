@@ -177,6 +177,9 @@ func TestAppendDecision_WithExistingHeading(t *testing.T) {
 	if !strings.Contains(string(body), "picked SQLite for storage") {
 		t.Errorf("decision wasn't appended.\ngot: %s", body)
 	}
+	if strings.Contains(string(body), "<dated entries.") {
+		t.Errorf("starter placeholder should be removed after a real decision.\ngot: %s", body)
+	}
 }
 
 func TestAppendDecision_AddsHeadingIfMissing(t *testing.T) {
@@ -216,6 +219,46 @@ func TestSaveAndLoadLast(t *testing.T) {
 	_ = os.RemoveAll(target)
 	if got := LoadLast(brainDir); got != "" {
 		t.Errorf("LoadLast for missing folder should return empty, got %q", got)
+	}
+}
+
+func TestAppendDecision_RefreshViaReadGUM(t *testing.T) {
+	// Simulates the remember-command refresh: append a decision, then
+	// re-read GUM to verify the in-memory state picks up the change.
+	tmp := t.TempDir()
+	gumPath := filepath.Join(tmp, "GUM.md")
+	if err := WriteGUM(gumPath, NewStarterGUM("test")); err != nil {
+		t.Fatal(err)
+	}
+	if err := AppendDecision(gumPath, "switched to PostgreSQL"); err != nil {
+		t.Fatalf("AppendDecision: %v", err)
+	}
+	refreshed, err := ReadGUM(gumPath)
+	if err != nil {
+		t.Fatalf("ReadGUM after append: %v", err)
+	}
+	if !strings.Contains(refreshed.Raw, "switched to PostgreSQL") {
+		t.Errorf("refreshed GUM should contain the appended decision.\ngot: %s", refreshed.Raw)
+	}
+	if refreshed.IsEmpty() {
+		t.Errorf("refreshed GUM should not be empty")
+	}
+}
+
+func TestAppendDecision_EmptyBulletStillWrites(t *testing.T) {
+	// AppendDecision with whitespace-only note should still produce a
+	// dated line (the caller is responsible for rejecting empty notes).
+	tmp := t.TempDir()
+	gumPath := filepath.Join(tmp, "GUM.md")
+	if err := os.WriteFile(gumPath, []byte("# test\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := AppendDecision(gumPath, "   "); err != nil {
+		t.Fatalf("AppendDecision: %v", err)
+	}
+	body, _ := os.ReadFile(gumPath)
+	if !strings.Contains(string(body), "## Recent decisions") {
+		t.Errorf("heading should be added.\ngot: %s", body)
 	}
 }
 

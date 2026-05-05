@@ -22,11 +22,11 @@ import (
 // Plan is the result of planning. The chat shell renders Response and
 // (optionally) executes Verbs.
 type Plan struct {
-	Response     string            // text to print to the user
-	Verbs        []Verb            // verbs to dispatch (may be empty for pure-talk responses)
-	Halt         bool              // signal the chat shell to exit (e.g., on "quit")
-	Mascot       string            // mascot state hint: "idle" | "walk" | "ghost"
-	LaunchWizard string            // if non-empty, the chat shell hands off to a system action
+	Response     string // text to print to the user
+	Verbs        []Verb // verbs to dispatch (may be empty for pure-talk responses)
+	Halt         bool   // signal the chat shell to exit (e.g., on "quit")
+	Mascot       string // mascot state hint: "idle" | "walk" | "ghost"
+	LaunchWizard string // if non-empty, the chat shell hands off to a system action
 	//                                by this name (e.g. "install_brain", "open_project").
 	//                                Response and Verbs are still rendered first; the action
 	//                                runs after.
@@ -195,6 +195,20 @@ func registerCoreVocabulary(p *ScriptedPlanner) {
 	// forget project — clear the active project and last-project memory.
 	p.Add(`(?i)^(forget|leave)\s+project$`, func(_ []string) Plan {
 		return Plan{LaunchWizard: "forget_project", Mascot: "idle"}
+	})
+
+	// remember <note> — record a note in GUM.md's Recent decisions.
+	p.Add(`(?i)^remember\s+(.+)$`, func(m []string) Plan {
+		return Plan{
+			LaunchWizard: "remember_note",
+			LaunchArgs:   map[string]string{"note": strings.TrimSpace(m[1])},
+			Mascot:       "walk",
+		}
+	})
+
+	// bare remember — no note given.
+	p.Add(`(?i)^remember\s*$`, func(_ []string) Plan {
+		return Plan{Response: p.pick("remember_empty"), Mascot: "idle"}
 	})
 
 	// (No regex-based "you sound like you want to build a website" intent

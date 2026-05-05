@@ -10,8 +10,8 @@
 //     when they want thinking-mode; `nap` to stop it and free RAM.
 //   - The brain dies with the REPL: SIGINT/SIGTERM/SIGHUP handlers stop
 //     it cleanly, and llama-server inherits the REPL's process group so
-//     a closed terminal kills it for free. A pidfile lets the next CHEW
-//     run clean up an orphan from a hard-killed previous session.
+//     a closed terminal kills it for free. A metadata file lets the next
+//     CHEW run clean up only brain processes from dead sessions.
 //
 // Run with:
 //   go run ./cmd/chew/chat/repl
@@ -90,6 +90,7 @@ func main() {
 	if last := project.LoadLast(brainDir); last != "" {
 		if pj, err := project.Open(last); err == nil {
 			proj.Store(pj)
+			tools.SetRoot(pj.Path)
 			fmt.Println()
 			fmt.Println(fmt.Sprintf(p.PickVoice("project_resumed"), pj.Name))
 			if !pj.GUM.IsEmpty() {
@@ -160,11 +161,13 @@ func main() {
 			case "nap_brain":
 				handleNapBrain(p, &brain)
 			case "open_project":
-				handleOpenProject(p, &proj, &brain, brainDir, plan.LaunchArgs["path"])
+				handleOpenProject(p, tools, &proj, &brain, brainDir, plan.LaunchArgs["path"])
 			case "create_project":
 				handleCreateProject(p, plan.LaunchArgs["name"])
 			case "forget_project":
-				handleForgetProject(p, &proj, &brain, brainDir)
+				handleForgetProject(p, tools, &proj, &brain, brainDir)
+			case "remember_note":
+				handleRememberNote(p, &proj, &brain, plan.LaunchArgs["note"])
 			default:
 				fmt.Printf("\n(unknown wizard requested: %s)\n", plan.LaunchWizard)
 			}
@@ -215,7 +218,6 @@ func handleWakeBrain(p *planner.ScriptedPlanner, brain *atomic.Pointer[wizard.Br
 	fmt.Println(p.PickVoice("brain_awake"))
 }
 
-
 // handleNapBrain stops the running brain and restores the brainless
 // fallback. Idempotent.
 func handleNapBrain(p *planner.ScriptedPlanner, brain *atomic.Pointer[wizard.Brain]) {
@@ -235,7 +237,7 @@ func handleNapBrain(p *planner.ScriptedPlanner, brain *atomic.Pointer[wizard.Bra
 // exist; if there's no GUM.md, we write a starter so CHEW has something
 // to read next time. If the brain is currently awake, its system prompt
 // is refreshed so the new project's GUM lands in context.
-func handleOpenProject(p *planner.ScriptedPlanner, proj *atomic.Pointer[project.Project], brain *atomic.Pointer[wizard.Brain], brainDir, path string) {
+func handleOpenProject(p *planner.ScriptedPlanner, reg *tool.Registry, proj *atomic.Pointer[project.Project], brain *atomic.Pointer[wizard.Brain], brainDir, path string) {
 	if path == "" {
 		fmt.Println()
 		fmt.Println(fmt.Sprintf(p.PickVoice("project_failed"), "no path given"))
@@ -266,6 +268,7 @@ func handleOpenProject(p *planner.ScriptedPlanner, proj *atomic.Pointer[project.
 		gumStatus = "Found GUM.md — I'll catch up on what's true."
 	}
 	proj.Store(pj)
+	reg.SetRoot(pj.Path)
 	_ = project.SaveLast(brainDir, pj.Path)
 
 	// If the brain is awake, refresh its system prompt so the LLM has
@@ -312,11 +315,46 @@ func handleCreateProject(p *planner.ScriptedPlanner, name string) {
 	fmt.Println(fmt.Sprintf(p.PickVoice("project_created"), pj.Path, pj.Path))
 }
 
+// handleRememberNote appends a user-supplied note to GUM.md's Recent
+// decisions section. Requires an active project; refreshes the in-memory
+// GUM and (if the brain is awake) the planner fallback so the brain sees
+// the updated project memory on the next turn.
+func handleRememberNote(p *planner.ScriptedPlanner, proj *atomic.Pointer[project.Project], brain *atomic.Pointer[wizard.Brain], note string) {
+	pj := proj.Load()
+	if pj == nil {
+		fmt.Println()
+		fmt.Println(p.PickVoice("remember_no_project"))
+		return
+	}
+	if strings.TrimSpace(note) == "" {
+		fmt.Println()
+		fmt.Println(p.PickVoice("remember_empty"))
+		return
+	}
+	if err := project.AppendDecision(pj.GUMPath(), note); err != nil {
+		fmt.Println()
+		fmt.Println(fmt.Sprintf(p.PickVoice("project_failed"), err.Error()))
+		return
+	}
+	// Refresh in-memory GUM so subsequent commands see the new content.
+	if gum, err := project.ReadGUM(pj.GUMPath()); err == nil {
+		pj.GUM = gum
+	}
+	// Refresh brain fallback if awake so the next free-form answer sees
+	// the updated GUM in its system prompt.
+	if b := brain.Load(); b != nil {
+		p.SetFallback(brainFallback(b, pj))
+	}
+	fmt.Println()
+	fmt.Println(p.PickVoice("remember_ok"))
+}
+
 // handleForgetProject clears the active project and the saved last-project.
 // If the brain is awake, its system prompt is refreshed without project
 // context — the brain forgets the project the same moment the chat does.
-func handleForgetProject(p *planner.ScriptedPlanner, proj *atomic.Pointer[project.Project], brain *atomic.Pointer[wizard.Brain], brainDir string) {
+func handleForgetProject(p *planner.ScriptedPlanner, reg *tool.Registry, proj *atomic.Pointer[project.Project], brain *atomic.Pointer[wizard.Brain], brainDir string) {
 	proj.Store(nil)
+	reg.SetRoot("")
 	_ = project.ClearLast(brainDir)
 	if b := brain.Load(); b != nil {
 		p.SetFallback(brainFallback(b, nil))
@@ -379,6 +417,7 @@ func printBrainlessIntro() {
 	fmt.Println("┌──────────────────────────────────────────────────────┐")
 	fmt.Println("│ CHEW chat                                            │")
 	fmt.Println("│ Commands: read, ls, write, find, run, git, web,      │")
-	fmt.Println("│ fetch, install brain, wake up, nap, help, quit.      │")
+	fmt.Println("│ fetch, remember, install brain, wake up, nap,        │")
+	fmt.Println("│ help, quit.                                          │")
 	fmt.Println("└──────────────────────────────────────────────────────┘")
 }

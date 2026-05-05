@@ -17,6 +17,7 @@ package wizard
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"net/http"
@@ -37,12 +38,41 @@ type BrainConfig struct {
 	LogPath    string // where to redirect stdout/stderr
 }
 
+// BrainMeta is ownership metadata written alongside a running brain so
+// concurrent CHEW sessions can distinguish an active brain from an orphan.
+type BrainMeta struct {
+	BrainPID  int    `json:"brain_pid"`
+	OwnerPID  int    `json:"owner_pid"`
+	StartedAt string `json:"started_at"`
+	Command   string `json:"command"`
+}
+
+// Process-inspection hooks — tests override these to avoid real signals/exec.
+var (
+	checkProcessAlive = processAlive
+	checkLlamaServer  = looksLikeLlamaServer
+	killBrainProcess  = defaultKillBrainProcess
+)
+
+// processAlive returns true if a process with the given PID exists.
+// Uses the Unix signal-0 trick; works on macOS and Linux.
+func processAlive(pid int) bool {
+	if pid <= 0 {
+		return false
+	}
+	proc, err := os.FindProcess(pid)
+	if err != nil {
+		return false
+	}
+	return proc.Signal(syscall.Signal(0)) == nil
+}
+
 // Brain is a running llama-server subprocess.
 type Brain struct {
 	cmd      *exec.Cmd
 	endpoint string // e.g. "http://127.0.0.1:8080"
 	logPath  string
-	pidPath  string // <brainDir>/brain.pid; written on Start, removed on Stop
+	metaPath string // <brainDir>/brain.pid.json; written on Start, removed on Stop
 	stopOnce bool
 }
 
@@ -51,9 +81,9 @@ type Brain struct {
 //
 // We deliberately do NOT put llama-server in its own process group: keeping
 // it in CHEW's foreground group means SIGHUP from a closed terminal kills
-// it for free, no signal handler needed. The pidfile written here is the
-// belt to that suspenders — next CHEW launch can clean up an orphan from
-// a hard-killed previous run.
+// it for free, no signal handler needed. The metadata file written here
+// records both the brain PID and the owner CHEW PID, so a concurrent
+// session's KillStaleBrain can skip an active brain and only reap orphans.
 func StartBrain(cfg BrainConfig) (*Brain, error) {
 	if cfg.BinaryPath == "" {
 		return nil, errors.New("BrainConfig.BinaryPath is required")
@@ -96,18 +126,21 @@ func StartBrain(cfg BrainConfig) (*Brain, error) {
 		return nil, fmt.Errorf("starting llama-server: %w", err)
 	}
 
-	pidPath := ""
+	metaPath := ""
 	if cfg.LogPath != "" {
-		// brain.pid lives next to brain.log so the brain dir owns both.
-		pidPath = filepath.Join(filepath.Dir(cfg.LogPath), "brain.pid")
-		_ = os.WriteFile(pidPath, []byte(fmt.Sprintf("%d\n", cmd.Process.Pid)), 0o644)
+		metaPath, _ = writeBrainMeta(filepath.Dir(cfg.LogPath), BrainMeta{
+			BrainPID:  cmd.Process.Pid,
+			OwnerPID:  os.Getpid(),
+			StartedAt: time.Now().UTC().Format(time.RFC3339),
+			Command:   cfg.BinaryPath,
+		})
 	}
 
 	return &Brain{
 		cmd:      cmd,
 		endpoint: fmt.Sprintf("http://127.0.0.1:%d", cfg.Port),
 		logPath:  cfg.LogPath,
-		pidPath:  pidPath,
+		metaPath: metaPath,
 	}, nil
 }
 
@@ -181,8 +214,9 @@ func (b *Brain) Stop() error {
 	}
 	b.stopOnce = true
 	defer func() {
-		if b.pidPath != "" {
-			_ = os.Remove(b.pidPath)
+		if b.metaPath != "" {
+			_ = os.Remove(b.metaPath)
+			_ = os.Remove(filepath.Join(filepath.Dir(b.metaPath), "brain.pid"))
 		}
 	}()
 
@@ -201,46 +235,118 @@ func (b *Brain) Stop() error {
 	}
 }
 
-// KillStaleBrain looks for a pidfile from a previous CHEW run and, if the
-// PID is still alive AND looks like our llama-server, kills it. Called by
-// the REPL on startup so a hard-crashed previous run doesn't leave the
-// brain hogging RAM.
-//
-// Safe to call when no pidfile exists — returns nil.
-func KillStaleBrain(brainDir string) error {
-	pidPath := filepath.Join(brainDir, "brain.pid")
-	body, err := os.ReadFile(pidPath)
+// writeBrainMeta writes brain ownership metadata to brainDir/brain.pid.json.
+func writeBrainMeta(brainDir string, meta BrainMeta) (string, error) {
+	path := filepath.Join(brainDir, "brain.pid.json")
+	data, err := json.Marshal(meta)
 	if err != nil {
-		return nil // no pidfile, nothing to do
+		return "", err
 	}
-	defer os.Remove(pidPath)
+	if err := os.WriteFile(path, append(data, '\n'), 0o644); err != nil {
+		return "", err
+	}
+	_ = os.Remove(filepath.Join(brainDir, "brain.pid"))
+	return path, nil
+}
 
+// readBrainMeta reads brain ownership metadata from brainDir.
+// Tries brain.pid.json first, then falls back to the legacy brain.pid.
+//
+// Returns:
+//   - meta: parsed metadata; nil if no readable metadata or malformed content
+//   - metaPath: file path found (set even for malformed files, for cleanup)
+//   - legacy: true when the data came from a bare brain.pid (no owner info)
+func readBrainMeta(brainDir string) (meta *BrainMeta, metaPath string, legacy bool) {
+	jsonPath := filepath.Join(brainDir, "brain.pid.json")
+	if data, err := os.ReadFile(jsonPath); err == nil {
+		var m BrainMeta
+		if err := json.Unmarshal(data, &m); err == nil && m.BrainPID > 0 {
+			return &m, jsonPath, false
+		}
+		return nil, jsonPath, false // malformed
+	}
+
+	pidPath := filepath.Join(brainDir, "brain.pid")
+	data, err := os.ReadFile(pidPath)
+	if err != nil {
+		return nil, "", false // no metadata at all
+	}
 	var pid int
-	if _, err := fmt.Sscanf(string(body), "%d", &pid); err != nil || pid <= 1 {
-		return nil
+	if _, err := fmt.Sscanf(string(data), "%d", &pid); err != nil || pid <= 1 {
+		return nil, pidPath, true // malformed legacy
 	}
+	return &BrainMeta{BrainPID: pid}, pidPath, true
+}
 
+// defaultKillBrainProcess sends SIGTERM, waits up to 5 s, then SIGKILL.
+func defaultKillBrainProcess(pid int) {
 	proc, err := os.FindProcess(pid)
 	if err != nil {
-		return nil
+		return
 	}
-	// On unix, FindProcess always succeeds; verify with a 0-signal test.
-	if err := proc.Signal(syscall.Signal(0)); err != nil {
-		return nil // not running
-	}
-	// Double-check the command line matches llama-server before killing.
-	if !looksLikeLlamaServer(pid) {
-		return nil // some other process snagged this PID
-	}
-
 	_ = proc.Signal(syscall.SIGTERM)
 	for i := 0; i < 10; i++ {
 		time.Sleep(500 * time.Millisecond)
-		if err := proc.Signal(syscall.Signal(0)); err != nil {
-			return nil
+		if !checkProcessAlive(pid) {
+			return
 		}
 	}
 	_ = proc.Kill()
+}
+
+// KillStaleBrain looks for brain metadata from a previous CHEW run. If the
+// owning CHEW process is still alive, the brain belongs to another active
+// session and is left alone. If the owner is gone and the brain PID is still
+// a running llama-server, it is killed as an orphan.
+//
+// Backward-compatible: reads a legacy brain.pid (bare PID) when no
+// brain.pid.json exists. Legacy files have no owner info so orphan detection
+// falls through to the llama-server command-name check only.
+//
+// Safe to call when no metadata exists — returns nil.
+func KillStaleBrain(brainDir string) error {
+	meta, metaPath, _ := readBrainMeta(brainDir)
+	if meta == nil {
+		// No readable metadata, or malformed file — clean up if present.
+		if metaPath != "" {
+			_ = os.Remove(metaPath)
+			legacyPath := filepath.Join(brainDir, "brain.pid")
+			if metaPath != legacyPath {
+				_ = os.Remove(legacyPath)
+			}
+		}
+		return nil
+	}
+
+	removeMeta := func() {
+		os.Remove(metaPath)
+		// If we handled the new format, also clean up any stale legacy pidfile.
+		legacyPath := filepath.Join(brainDir, "brain.pid")
+		if metaPath != legacyPath {
+			os.Remove(legacyPath)
+		}
+	}
+
+	// Owner still alive → another CHEW session owns this brain.
+	if meta.OwnerPID > 0 && checkProcessAlive(meta.OwnerPID) {
+		return nil
+	}
+
+	// Brain process not running → just clean up stale metadata.
+	if meta.BrainPID <= 0 || !checkProcessAlive(meta.BrainPID) {
+		removeMeta()
+		return nil
+	}
+
+	// PID alive but not llama-server → PID was reused; clean metadata only.
+	if !checkLlamaServer(meta.BrainPID) {
+		removeMeta()
+		return nil
+	}
+
+	// Orphaned llama-server — kill it and clean up.
+	killBrainProcess(meta.BrainPID)
+	removeMeta()
 	return nil
 }
 

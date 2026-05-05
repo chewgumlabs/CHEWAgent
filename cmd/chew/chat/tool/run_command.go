@@ -30,6 +30,7 @@ import (
 type RunCommand struct {
 	MaxOutputBytes int
 	Timeout        time.Duration
+	Root           *string // if non-nil, set as working directory for commands
 }
 
 // Name implements Tool.
@@ -59,6 +60,9 @@ func (r *RunCommand) Execute(params map[string]any) (Result, error) {
 		cmd = exec.CommandContext(ctx, "cmd", "/C", cmdStr)
 	} else {
 		cmd = exec.CommandContext(ctx, "sh", "-c", cmdStr)
+	}
+	if r.Root != nil && *r.Root != "" {
+		cmd.Dir = *r.Root
 	}
 
 	out, runErr := cmd.CombinedOutput()

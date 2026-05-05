@@ -11,7 +11,8 @@ import (
 
 // ListDir lists a directory.
 type ListDir struct {
-	MaxEntries int // 0 = 200
+	MaxEntries int     // 0 = 200
+	Root       *string // if non-nil, resolve relative paths against this root
 }
 
 // Name implements Tool.
@@ -22,6 +23,10 @@ func (l *ListDir) Execute(params map[string]any) (Result, error) {
 	path := stringParam(params, "path")
 	if path == "" {
 		path = "."
+	}
+	path, err := resolveToolPath(l.Root, path)
+	if err != nil {
+		return Result{}, err
 	}
 	info, err := os.Stat(path)
 	if err != nil {

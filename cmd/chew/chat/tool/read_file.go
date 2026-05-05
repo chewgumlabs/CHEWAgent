@@ -16,7 +16,8 @@ import (
 
 // ReadFile prints the contents of a file.
 type ReadFile struct {
-	MaxBytes int64 // 0 = 1 MB
+	MaxBytes int64   // 0 = 1 MB
+	Root     *string // if non-nil, resolve relative paths against this root
 }
 
 // Name implements Tool.
@@ -27,6 +28,10 @@ func (r *ReadFile) Execute(params map[string]any) (Result, error) {
 	path := stringParam(params, "path")
 	if path == "" {
 		return Result{}, errors.New("read_file requires a 'path' param")
+	}
+	path, err := resolveToolPath(r.Root, path)
+	if err != nil {
+		return Result{}, err
 	}
 	info, err := os.Stat(path)
 	if err != nil {
