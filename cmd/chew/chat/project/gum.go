@@ -8,7 +8,7 @@
 //
 // For v0 we don't parse sections — GUM.Raw is the whole file. Future
 // passes can extract structured fields. The starter template is what
-// ships into a fresh project; the user fills in the prose.
+// ships into a fresh project; CHEW fills it through conversation.
 
 package project
 
@@ -140,10 +140,9 @@ func AppendDecision(path, bullet string) error {
 	return os.WriteFile(path, []byte(content), 0o644)
 }
 
-// NewStarterGUM returns a fresh GUM body for a brand-new project. The
-// template prompts the user to fill in the why, ground truth, and open
-// questions. CHEW writes into "Recent decisions" automatically over
-// time.
+// NewStarterGUM returns a fresh GUM body for a brand-new project. It is
+// a machine-owned memory file: users can edit it if they go looking, but
+// the chat UX should fill it through conversation.
 func NewStarterGUM(projectName string) GUM {
 	if projectName == "" {
 		projectName = "this project"
@@ -172,6 +171,71 @@ explore.>
 <dated entries. CHEW appends here when significant choices are made.>
 `, projectName)
 	return GUM{Raw: body}
+}
+
+// SetIntent replaces the Intent section with a sentence captured from
+// conversation. If the section is missing, it is added near the top.
+func SetIntent(path, intent string) error {
+	intent = normalizeIntentSentence(intent)
+	if intent == "" {
+		return errors.New("intent is empty")
+	}
+	body, err := os.ReadFile(path)
+	if err != nil {
+		return fmt.Errorf("read %s: %w", path, err)
+	}
+	updated := replaceMarkdownSection(string(body), "## Intent", intent+"\n")
+	return os.WriteFile(path, []byte(updated), 0o644)
+}
+
+func normalizeIntentSentence(s string) string {
+	s = strings.TrimSpace(s)
+	if s == "" {
+		return ""
+	}
+	s = strings.Join(strings.Fields(s), " ")
+	s = strings.Trim(s, `"'`)
+	s = strings.TrimSpace(s)
+	if s == "" {
+		return ""
+	}
+	r := []rune(s)
+	if r[0] >= 'a' && r[0] <= 'z' {
+		r[0] = r[0] - ('a' - 'A')
+	}
+	s = string(r)
+	if !strings.ContainsAny(s[len(s)-1:], ".!?") {
+		s += "."
+	}
+	return s
+}
+
+func replaceMarkdownSection(raw, heading, sectionBody string) string {
+	lines := strings.Split(raw, "\n")
+	for i, line := range lines {
+		if strings.TrimSpace(line) != heading {
+			continue
+		}
+		j := i + 1
+		for j < len(lines) && !strings.HasPrefix(strings.TrimSpace(lines[j]), "## ") {
+			j++
+		}
+		replacement := append([]string{}, lines[:i+1]...)
+		replacement = append(replacement, strings.TrimRight(sectionBody, "\n"))
+		replacement = append(replacement, "")
+		replacement = append(replacement, lines[j:]...)
+		return strings.TrimRight(strings.Join(replacement, "\n"), "\n") + "\n"
+	}
+
+	insert := heading + "\n" + strings.TrimRight(sectionBody, "\n") + "\n"
+	if strings.HasPrefix(strings.TrimSpace(raw), "# ") {
+		lines := strings.Split(raw, "\n")
+		if len(lines) > 1 {
+			out := append([]string{lines[0], "", insert}, lines[1:]...)
+			return strings.TrimRight(strings.Join(out, "\n"), "\n") + "\n"
+		}
+	}
+	return strings.TrimRight(insert+"\n"+raw, "\n") + "\n"
 }
 
 // SaveRaw writes whatever you hand it to disk verbatim. Used when the

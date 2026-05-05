@@ -258,24 +258,24 @@ var responsePools = map[string][]string{
 	// project_summary — shown after resume when GUM.md has content.
 	// Slot %s = the GUM summary.
 	"project_summary": {
-		`Reading GUM.md...
+		`Catching up on project memory...
 
 %s`,
-		`Catching up via GUM.md...
+		`Reading what I remembered...
 
 %s`,
 	},
 
 	// project_no_gum — when a project is opened but there's no GUM.md yet.
 	"project_no_gum": {
-		`No GUM.md here yet. I'll write a starter template — fill in the why and I'll remember it next time.`,
-		`Project's bare. Writing a starter GUM.md so I have somewhere to keep notes.`,
+		`No project memory here yet. I'll set that up quietly.`,
+		`Project's bare. I'll make myself a little memory file.`,
 	},
 
 	// project_created — shown after `make project X` succeeds.
 	// Slots: %s = project name, %s = full path of the created folder.
 	"project_created": {
-		`Made project '%s' with a starter GUM.md and moved in.
+		`Made project '%s' with project memory and moved in.
 Stored in folder: %s`,
 		`Project '%s' is ready. I'm in it now.
 Folder: %s`,
@@ -287,7 +287,7 @@ Folder: %s`,
 		`Made folder: %s
 Not a project. Use 'make project <name>' when you want me to move in.`,
 		`Folder ready: %s
-Plain folder only. 'make project <name>' sets up GUM and makes it my repo.`,
+Plain folder only. 'make project <name>' sets up memory and makes it my repo.`,
 	},
 
 	// project_failed — generic project op failure. Slot %s = friendly reason.
@@ -313,9 +313,9 @@ Plain folder only. 'make project <name>' sets up GUM and makes it my repo.`,
 	// remember_ok — confirmation after recording a note in GUM.md.
 	// No slots.
 	"remember_ok": {
-		`Noted. Wrote that to GUM.md. *croak*`,
-		`Hmph. Remembered. GUM.md updated.`,
-		`Written down in GUM.md.`,
+		`Noted. I'll remember that. *croak*`,
+		`Hmph. Remembered.`,
+		`Written into project memory.`,
 	},
 
 	// remember_no_project — user tried to remember without an active project.
@@ -369,7 +369,7 @@ var helpBody = `  read <file>           print file contents
   here <path>           set the active folder; or just drop one in here
   make project <name>   create a project folder and move in
   make folder <name>    create a plain folder under ~/Documents/
-  remember <note>       record a note in GUM.md
+  remember <note>       record a note in project memory
   forget project        clear the active folder
 
   Brain (the LLM):

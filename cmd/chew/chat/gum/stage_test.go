@@ -154,8 +154,25 @@ func TestInstructions_AllStagesHaveText(t *testing.T) {
 		if strings.TrimSpace(got) == "" {
 			t.Errorf("%s: empty instruction block", s)
 		}
-		if !strings.Contains(got, "GUM stage:") {
-			t.Errorf("%s: instruction block missing 'GUM stage:' header — got: %s", s, got[:min(80, len(got))])
+		if !strings.Contains(got, "internal project stage:") {
+			t.Errorf("%s: instruction block missing internal stage header — got: %s", s, got[:min(80, len(got))])
+		}
+	}
+}
+
+func TestInstructions_DoNotAskUserToEditProjectMemory(t *testing.T) {
+	for _, s := range []Stage{StageEmptyProject, StageStarted, StageMature} {
+		got := Instructions(s)
+		for _, bad := range []string{
+			"Open GUM.md",
+			"edit GUM.md",
+			"fill out",
+			"replace the <one paragraph",
+			"Intent section",
+		} {
+			if strings.Contains(got, bad) {
+				t.Fatalf("%s instruction leaks memory-management chore %q:\n%s", s, bad, got)
+			}
 		}
 	}
 }

@@ -182,6 +182,28 @@ func TestAppendDecision_WithExistingHeading(t *testing.T) {
 	}
 }
 
+func TestSetIntentReplacesStarterPlaceholder(t *testing.T) {
+	tmp := t.TempDir()
+	gumPath := filepath.Join(tmp, "GUM.md")
+	if err := WriteGUM(gumPath, NewStarterGUM("test")); err != nil {
+		t.Fatal(err)
+	}
+	if err := SetIntent(gumPath, "a website for my studio"); err != nil {
+		t.Fatalf("SetIntent: %v", err)
+	}
+	body, _ := os.ReadFile(gumPath)
+	got := string(body)
+	if !strings.Contains(got, "A website for my studio.") {
+		t.Fatalf("intent was not written as a sentence:\n%s", got)
+	}
+	if strings.Contains(got, "<one paragraph:") {
+		t.Fatalf("starter placeholder should be removed:\n%s", got)
+	}
+	if !strings.Contains(got, "## Why") {
+		t.Fatalf("other sections should be preserved:\n%s", got)
+	}
+}
+
 func TestAppendDecision_AddsHeadingIfMissing(t *testing.T) {
 	tmp := t.TempDir()
 	gumPath := filepath.Join(tmp, "GUM.md")

@@ -36,7 +36,7 @@ const (
 
 	// StageEmptyProject — folder is set up but Intent isn't filled in
 	// and there are no source files yet. CHEW's job is to ask what
-	// they're building, then prompt the user to update GUM.md.
+	// they're building and keep project memory invisible.
 	StageEmptyProject
 
 	// StageIntentKnown — GUM.md's Intent section has real content

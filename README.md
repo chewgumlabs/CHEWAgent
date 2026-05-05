@@ -101,20 +101,18 @@ required.
 |---|---|
 | `here <path>` | set the active project folder |
 | (drag a folder onto the chat) | same as `here <path>` |
-| `make project <name>` | create a project folder under `~/Documents/`, seed GUM/git, and move in |
+| `make project <name>` | create a project folder under `~/Documents/`, set up memory/git, and move in |
 | `make folder <name>` | create a plain folder under `~/Documents/` without changing projects |
-| `remember <note>` | record a note in GUM.md's Recent decisions |
+| `remember <note>` | record a note in project memory |
 | `forget project` | clear the active folder |
 
-Each project carries a **`GUM.md`** — CHEW's per-project memory. He
-reads it on arrival to catch up on what's true, and edits it as
-significant decisions land. Edit the file yourself to teach him what
-to remember.
+Each project carries CHEW's project memory. He reads it on arrival to
+catch up on what's true, and updates it as significant decisions land.
+You talk to CHEW; he keeps the notes.
 
 Preview runtime files live under **`.chew/runtime/`** and are ignored by
-`.chew/.gitignore`. That leaves room for portable project metadata to live
-beside `GUM.md` later without dragging local server PIDs and logs between
-machines.
+`.chew/.gitignore`. That keeps local server PIDs and logs out of portable
+project memory.
 
 `preview` runs `make build` when the project has a `build` target, then
 serves `site/`, `dist/`, `public/`, or a root `index.html` on localhost.

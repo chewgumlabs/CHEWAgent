@@ -16,6 +16,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"net/http"
+	"regexp"
 	"strings"
 	"time"
 
@@ -36,6 +37,11 @@ Help the user even when they're weird. Stay in character.
 
 CREATOR: Shane Curry, ChewGumLabs. https://shanecurry.com — point people
 there if they ask about Shane. Don't invent bio details.
+
+Project memory is internal. Never ask the user to open, edit, modify, or
+save memory files. Never mention project-memory placeholders or sections
+unless the user explicitly asks where memory is stored. Ask questions in
+chat; CHEW records important answers invisibly.
 
 THE COMMANDS YOU CAN SUGGEST (the user types these themselves):
   read <file>           ls [<dir>]            write <file>
@@ -64,9 +70,9 @@ func buildSystemPrompt(pj *project.Project) string {
 	if pj != nil {
 		b.WriteString("\n\n--- current project context ---\n")
 		fmt.Fprintf(&b, "Project: '%s'\n", pj.Name)
-		if strings.TrimSpace(pj.GUM.Raw) != "" {
-			b.WriteString("\nGUM.md (project memory; treat as ground truth):\n\n")
-			b.WriteString(strings.TrimSpace(pj.GUM.Raw))
+		if summary := strings.TrimSpace(pj.GUM.Summary()); summary != "" {
+			b.WriteString("\nInternal project memory (treat as ground truth; do not mention the storage filename unless asked):\n\n")
+			b.WriteString(summary)
 			b.WriteString("\n")
 		}
 		b.WriteString("--- end project context ---")
@@ -91,7 +97,8 @@ type chatSession struct {
 
 // newChatSession builds a fresh conversation. pj may be nil — that's
 // how we say "no project active." When pj is set, its GUM.md and the
-// detected stage's instructions land in the system prompt.
+// detected stage's internal memory summary and instructions land in the
+// system prompt.
 func newChatSession(b *wizard.Brain, pj *project.Project) *chatSession {
 	return &chatSession{
 		endpoint: b.Endpoint() + "/v1/chat/completions",
@@ -160,6 +167,9 @@ func (s *chatSession) ask(input string) (string, error) {
 func brainFallback(b *wizard.Brain, pj *project.Project) func(input string) planner.Plan {
 	sess := newChatSession(b, pj)
 	return func(input string) planner.Plan {
+		if captureIntentFromChat(pj, input) {
+			sess = newChatSession(b, pj)
+		}
 		reply, err := sess.ask(input)
 		if err != nil {
 			return planner.Plan{
@@ -172,6 +182,110 @@ func brainFallback(b *wizard.Brain, pj *project.Project) func(input string) plan
 			Mascot:   "idle",
 		}
 	}
+}
+
+var intentPatterns = []*regexp.Regexp{
+	regexp.MustCompile(`(?i)\b(?:let'?s|lets)\s+(?:make|build|create|start|set up|put together)\s+(?:a|an|the)?\s*(.+)$`),
+	regexp.MustCompile(`(?i)\b(?:i|we)\s+(?:want|wanna|would like|need)\s+(?:to\s+)?(?:make|build|create|start|set up|put together)\s+(?:a|an|the)?\s*(.+)$`),
+	regexp.MustCompile(`(?i)\b(?:make|build|create|start|set up|put together)\s+(?:a|an|the)?\s*(.+)$`),
+}
+
+func captureIntentFromChat(pj *project.Project, input string) bool {
+	if pj == nil || gum.Detect(pj) != gum.StageEmptyProject {
+		return false
+	}
+	intent := intentFromChat(input)
+	if intent == "" {
+		return false
+	}
+	if err := project.SetIntent(pj.GUMPath(), intent); err != nil {
+		return false
+	}
+	if refreshed, err := project.ReadGUM(pj.GUMPath()); err == nil {
+		pj.GUM = refreshed
+	}
+	return true
+}
+
+func intentFromChat(input string) string {
+	clean := strings.TrimSpace(input)
+	if clean == "" {
+		return ""
+	}
+	lower := strings.ToLower(strings.TrimSpace(clean))
+	if strings.HasSuffix(lower, "?") || isNonIntentReply(lower) {
+		return ""
+	}
+	for _, pattern := range intentPatterns {
+		matches := pattern.FindStringSubmatch(clean)
+		if len(matches) == 2 {
+			return cleanIntentCandidate(matches[1], true)
+		}
+	}
+	if startsLikeBareIntent(lower) {
+		return cleanIntentCandidate(clean, false)
+	}
+	return ""
+}
+
+func isNonIntentReply(lower string) bool {
+	for _, exact := range []string{"ok", "okay", "yes", "yeah", "sure"} {
+		if lower == exact {
+			return true
+		}
+	}
+	rejectPrefixes := []string{
+		"what ", "how ", "why ", "when ", "where ", "who ",
+		"can you ", "could you ", "should ", "help ",
+		"i don't know", "i dont know", "not sure", "no idea",
+	}
+	for _, prefix := range rejectPrefixes {
+		if lower == strings.TrimSpace(prefix) || strings.HasPrefix(lower, prefix) {
+			return true
+		}
+	}
+	return false
+}
+
+func startsLikeBareIntent(lower string) bool {
+	if strings.HasPrefix(lower, "a ") || strings.HasPrefix(lower, "an ") || strings.HasPrefix(lower, "the ") {
+		return containsBuildNoun(lower)
+	}
+	return false
+}
+
+func containsBuildNoun(lower string) bool {
+	for _, word := range []string{"website", "site", "app", "tool", "game", "blog", "portfolio", "page", "tracker", "dashboard", "store", "shop"} {
+		if strings.Contains(lower, word) {
+			return true
+		}
+	}
+	return false
+}
+
+func cleanIntentCandidate(candidate string, fromActionPattern bool) string {
+	candidate = strings.TrimSpace(candidate)
+	candidate = strings.Trim(candidate, `"'`)
+	candidate = strings.TrimRight(candidate, ".!?:;")
+	candidate = strings.TrimSpace(candidate)
+	if candidate == "" {
+		return ""
+	}
+	lower := strings.ToLower(candidate)
+	if strings.Contains(lower, "gum.md") || strings.Contains(lower, "intent section") || strings.Contains(lower, "one paragraph") {
+		return ""
+	}
+	generic := map[string]bool{
+		"something": true, "anything": true, "a thing": true, "thing": true,
+		"a project": true, "project": true, "stuff": true,
+	}
+	if generic[lower] {
+		return ""
+	}
+	if !fromActionPattern && !containsBuildNoun(lower) {
+		return ""
+	}
+	return candidate
 }
 
 // brainHealthCheck pokes /health on the brain so the REPL can confirm it's

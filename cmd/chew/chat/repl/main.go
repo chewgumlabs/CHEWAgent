@@ -340,7 +340,7 @@ func handleOpenProjectWithReply(p *planner.ScriptedPlanner, reg *tool.Registry, 
 		}
 		gumStatus = p.PickVoice("project_no_gum")
 	} else {
-		gumStatus = "Found GUM.md — I'll catch up on what's true."
+		gumStatus = "Found project memory — I'll catch up on what's true."
 	}
 	proj.Store(pj)
 	reg.SetRoot(pj.Path)
