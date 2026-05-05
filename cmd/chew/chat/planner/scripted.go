@@ -21,14 +21,16 @@ import (
 // Plan is the result of planning. The chat shell renders Response and
 // (optionally) executes Verbs.
 type Plan struct {
-	Response     string // text to print to the user
-	Verbs        []Verb // verbs to dispatch (may be empty for pure-talk responses)
-	Halt         bool   // signal the chat shell to exit (e.g., on "quit")
-	Mascot       string // mascot state hint: "idle" | "walk" | "ghost"
-	LaunchWizard string // if non-empty, the chat shell hands off to a wizard
-	//                     by this name (e.g. "install_brain"). Response and
-	//                     Verbs are still rendered first; the wizard runs
-	//                     after.
+	Response     string            // text to print to the user
+	Verbs        []Verb            // verbs to dispatch (may be empty for pure-talk responses)
+	Halt         bool              // signal the chat shell to exit (e.g., on "quit")
+	Mascot       string            // mascot state hint: "idle" | "walk" | "ghost"
+	LaunchWizard string            // if non-empty, the chat shell hands off to a system action
+	//                                by this name (e.g. "install_brain", "open_project").
+	//                                Response and Verbs are still rendered first; the action
+	//                                runs after.
+	LaunchArgs map[string]string // arg map for the system action — e.g.
+	//                                {"path": "/Users/.../comic-tracker"} for open_project.
 }
 
 // Verb is a generic verb invocation: name + JSON-shaped params.
@@ -169,6 +171,54 @@ func registerCoreVocabulary(p *ScriptedPlanner) {
 	// fallback until the user types 'wake up' again.
 	p.Add(`(?i)^(nap|sleep|sleep brain|stop brain)$`, func(_ []string) Plan {
 		return Plan{LaunchWizard: "nap_brain", Mascot: "idle"}
+	})
+
+	// here <path> — explicitly set the project folder.
+	p.Add(`(?i)^here\s+(.+)$`, func(m []string) Plan {
+		return Plan{
+			LaunchWizard: "open_project",
+			LaunchArgs:   map[string]string{"path": strings.TrimSpace(m[1])},
+			Mascot:       "walk",
+		}
+	})
+
+	// make folder <name> — create a fresh project folder under ~/Documents/.
+	p.Add(`(?i)^(make|new)\s+(folder|project)\s+(.+)$`, func(m []string) Plan {
+		return Plan{
+			LaunchWizard: "create_project",
+			LaunchArgs:   map[string]string{"name": strings.TrimSpace(m[3])},
+			Mascot:       "walk",
+		}
+	})
+
+	// forget project — clear the active project and last-project memory.
+	p.Add(`(?i)^(forget|leave)\s+project$`, func(_ []string) Plan {
+		return Plan{LaunchWizard: "forget_project", Mascot: "idle"}
+	})
+
+	// "I'd like to build / let's make / help me make X" — project intent.
+	// Doesn't dispatch anything; just nudges the user to set up a folder.
+	p.Add(`(?i)^(i('?d| would)? like to|i want to|let'?s|let me|help me|i'?m (going to|gonna|trying to))\s+(build|make|create|design|develop|setup|set up|start)\s+(.+)$`,
+		func(m []string) Plan {
+			thing := strings.TrimSpace(m[5])
+			return Plan{
+				Response: fmt.Sprintf(p.pick("project_pitch"), thing),
+				Mascot:   "idle",
+			}
+		})
+
+	// Bare path (drag-into-terminal often pastes a path). Treat as
+	// "open as project folder." Must come BEFORE the read/cat/show rule
+	// in case anyone types just `/Users/.../foo` on its own.
+	p.Add(`^['"]?(/|~/|~$|[A-Za-z]:[\\/])[^\n]*['"]?$`, func(m []string) Plan {
+		// m[0] is the whole match; trim quotes
+		raw := strings.TrimSpace(m[0])
+		raw = strings.Trim(raw, `'"`)
+		return Plan{
+			LaunchWizard: "open_project",
+			LaunchArgs:   map[string]string{"path": raw},
+			Mascot:       "walk",
+		}
 	})
 
 	// web — fetch a URL. MUST come before the generic `read <file>` rule

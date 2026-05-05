@@ -24,12 +24,14 @@ import (
 	"fmt"
 	"os"
 	"os/signal"
+	"path/filepath"
 	"strings"
 	"sync/atomic"
 	"syscall"
 	"time"
 
 	"github.com/chewgumlabs/CHEWAgent/cmd/chew/chat/planner"
+	"github.com/chewgumlabs/CHEWAgent/cmd/chew/chat/project"
 	"github.com/chewgumlabs/CHEWAgent/cmd/chew/chat/tool"
 	"github.com/chewgumlabs/CHEWAgent/cmd/chew/chat/wizard"
 )
@@ -77,6 +79,21 @@ func main() {
 		fmt.Println("No brain installed yet. Type 'install brain' to set one up.")
 	}
 	printBrainlessIntro()
+
+	// Project state — the active folder CHEW is working out of. Resumed
+	// from <brainDir>/last-project.txt if there is one.
+	var proj atomic.Pointer[project.Project]
+	if last := project.LoadLast(brainDir); last != "" {
+		if pj, err := project.Open(last); err == nil {
+			proj.Store(pj)
+			fmt.Println()
+			fmt.Println(fmt.Sprintf(p.PickVoice("project_resumed"), pj.Name))
+			if !pj.GUM.IsEmpty() {
+				fmt.Println()
+				fmt.Println(fmt.Sprintf(p.PickVoice("project_summary"), pj.GUM.Summary()))
+			}
+		}
+	}
 
 	for {
 		fmt.Print("\n> ")
@@ -138,6 +155,12 @@ func main() {
 				handleWakeBrain(p, &brain)
 			case "nap_brain":
 				handleNapBrain(p, &brain)
+			case "open_project":
+				handleOpenProject(p, &proj, brainDir, plan.LaunchArgs["path"])
+			case "create_project":
+				handleCreateProject(p, plan.LaunchArgs["name"])
+			case "forget_project":
+				handleForgetProject(p, &proj, brainDir)
 			default:
 				fmt.Printf("\n(unknown wizard requested: %s)\n", plan.LaunchWizard)
 			}
@@ -194,6 +217,87 @@ func handleNapBrain(p *planner.ScriptedPlanner, brain *atomic.Pointer[wizard.Bra
 	p.SetFallback(nil) // restore default brainless fallback
 	fmt.Println()
 	fmt.Println(p.PickVoice("brain_napping"))
+}
+
+// handleOpenProject sets up shop in the given folder. The folder must
+// exist; if there's no GUM.md, we write a starter so CHEW has something
+// to read next time.
+func handleOpenProject(p *planner.ScriptedPlanner, proj *atomic.Pointer[project.Project], brainDir, path string) {
+	if path == "" {
+		fmt.Println()
+		fmt.Println(fmt.Sprintf(p.PickVoice("project_failed"), "no path given"))
+		return
+	}
+	pj, err := project.Open(path)
+	if err != nil {
+		// If the path is a file (not a folder), give a specific hint.
+		info, statErr := os.Stat(strings.Trim(path, `'"`))
+		if statErr == nil && !info.IsDir() {
+			fmt.Println()
+			fmt.Println(fmt.Sprintf(p.PickVoice("project_path_is_file"), filepath.Base(path)))
+			return
+		}
+		fmt.Println()
+		fmt.Println(fmt.Sprintf(p.PickVoice("project_failed"), err.Error()))
+		return
+	}
+	gumStatus := ""
+	if !pj.HasGUM() {
+		// Seed a starter GUM.md so the next session has something to read.
+		starter := project.NewStarterGUM(pj.Name)
+		if err := project.WriteGUM(pj.GUMPath(), starter); err == nil {
+			pj.GUM = starter
+		}
+		gumStatus = p.PickVoice("project_no_gum")
+	} else {
+		gumStatus = "Found GUM.md — I'll catch up on what's true."
+	}
+	proj.Store(pj)
+	_ = project.SaveLast(brainDir, pj.Path)
+
+	fmt.Println()
+	fmt.Println(fmt.Sprintf(p.PickVoice("project_opened"), pj.Name, gumStatus))
+	if !pj.GUM.IsEmpty() && pj.HasGUM() {
+		// If the user opened a folder with existing notes, show the summary.
+		summary := pj.GUM.Summary()
+		if summary != "" && len(summary) < 1500 {
+			fmt.Println()
+			fmt.Println(fmt.Sprintf(p.PickVoice("project_summary"), summary))
+		}
+	}
+}
+
+// handleCreateProject creates a fresh folder under ~/Documents/ with a
+// starter GUM.md inside.
+func handleCreateProject(p *planner.ScriptedPlanner, name string) {
+	if name == "" {
+		fmt.Println()
+		fmt.Println(fmt.Sprintf(p.PickVoice("project_failed"), "give the folder a name: 'make folder <name>'"))
+		return
+	}
+	home, err := os.UserHomeDir()
+	if err != nil {
+		fmt.Println()
+		fmt.Println(fmt.Sprintf(p.PickVoice("project_failed"), "couldn't find your home directory"))
+		return
+	}
+	target := filepath.Join(home, "Documents", strings.TrimSpace(name))
+	pj, err := project.Create(target)
+	if err != nil {
+		fmt.Println()
+		fmt.Println(fmt.Sprintf(p.PickVoice("project_failed"), err.Error()))
+		return
+	}
+	fmt.Println()
+	fmt.Println(fmt.Sprintf(p.PickVoice("project_created"), pj.Path, pj.Path))
+}
+
+// handleForgetProject clears the active project and the saved last-project.
+func handleForgetProject(p *planner.ScriptedPlanner, proj *atomic.Pointer[project.Project], brainDir string) {
+	proj.Store(nil)
+	_ = project.ClearLast(brainDir)
+	fmt.Println()
+	fmt.Println(p.PickVoice("project_forgotten"))
 }
 
 // summariseSpawnErr converts a wake error into a short friendly phrase.
