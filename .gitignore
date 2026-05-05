@@ -1,0 +1,30 @@
+# Binaries for programs and plugins
+*.exe
+*.exe~
+*.dll
+*.so
+*.dylib
+
+# Test binary, built with `go test -c`
+*.test
+
+# Output of the go coverage tool
+*.out
+
+# Build cache + module cache
+/bin/
+/dist/
+
+# Editor cruft
+.DS_Store
+.idea/
+.vscode/
+*.swp
+*.swo
+
+# CHEW runtime files (don't ship into the repo)
+.chew/
+brain.log
+
+# Local development overrides
+*.local.json
