@@ -67,6 +67,10 @@ when the network's back, or reinstall CHEW if it keeps happening.`
 // downloadStartText — shown when the actual download begins.
 var downloadStartText = `[2/3] Growing the brain. *croak*`
 
+// downloadSkipText — shown when a previous install left Bonsai on disk
+// already. No need to fetch it again.
+var downloadSkipText = `[2/3] Brain's already on disk. Hmph. Skipping ahead.`
+
 // downloadProgressText — slots: %.1f = MB done, %.1f = MB total, %d = percent.
 // Emitted periodically by the downloader. Keep terse — this prints on
 // every progress tick.

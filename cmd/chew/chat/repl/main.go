@@ -28,8 +28,6 @@ import (
 )
 
 func main() {
-	printIntro()
-
 	p := planner.NewScriptedPlanner()
 	tools := tool.NewDefault() // web_search + web_fetch wired today; more verbs as we add them
 	state := newMascotState("idle")
@@ -38,13 +36,29 @@ func main() {
 	scanner.Buffer(make([]byte, 0, 1024), 1024*1024)
 
 	// brain is held here so we can Stop it on exit. Set after a successful
-	// install_brain wizard run.
+	// install_brain wizard run, or auto-detected at startup.
 	var brain *wizard.Brain
 	defer func() {
 		if brain != nil {
 			_ = brain.Stop()
 		}
 	}()
+
+	// Auto-detect a previously-installed brain so users don't have to
+	// re-run 'install brain' every session.
+	fmt.Print("Waking up... ")
+	if existing, err := wizard.AutoDetectBrain(); err != nil {
+		fmt.Printf("brain found but didn't start cleanly (%v). Continuing brainless.\n", err)
+		printBrainlessIntro()
+	} else if existing != nil {
+		brain = existing
+		p.SetFallback(brainFallback(brain))
+		fmt.Println("brain online. *croak*")
+		printAwakeIntro()
+	} else {
+		fmt.Println("no brain installed yet.")
+		printBrainlessIntro()
+	}
 
 	for {
 		fmt.Print("\n> ")
@@ -160,11 +174,19 @@ func runInstallBrainWizard(scanner *bufio.Scanner) *wizard.Brain {
 	return w.RunningBrain()
 }
 
-func printIntro() {
+func printBrainlessIntro() {
 	fmt.Println("┌──────────────────────────────────────────────────────┐")
 	fmt.Println("│ CHEW chat — brainless mode                           │")
 	fmt.Println("│ I do file ops, search, web search, fetch URLs, git   │")
 	fmt.Println("│ read-only. Type 'help' for the menu, 'install brain' │")
 	fmt.Println("│ to put a brain in me.                                │")
+	fmt.Println("└──────────────────────────────────────────────────────┘")
+}
+
+func printAwakeIntro() {
+	fmt.Println("┌──────────────────────────────────────────────────────┐")
+	fmt.Println("│ CHEW chat — thinking mode                            │")
+	fmt.Println("│ Brain is loaded. Ask me anything, or use commands    │")
+	fmt.Println("│ like 'read', 'web search', 'fetch'. 'help' for menu. │")
 	fmt.Println("└──────────────────────────────────────────────────────┘")
 }

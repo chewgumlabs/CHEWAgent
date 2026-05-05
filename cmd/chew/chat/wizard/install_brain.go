@@ -164,6 +164,59 @@ func (w *InstallBrain) RunningBrain() *Brain {
 	return w.brain
 }
 
+// AutoDetectBrain looks for a previously-installed brain at the canonical
+// location (<repo>/brain/<modelfile>) and spawns it if found. Used by the
+// REPL on startup so the user doesn't have to type 'install brain' every
+// session.
+//
+// Returns:
+//   (brain, nil) — installed brain found, spawned, healthy.
+//   (nil, nil)   — no install on disk; REPL should run in brainless mode.
+//   (nil, err)   — install exists but couldn't start; REPL surfaces a note.
+//
+// Health-deadline is 60s. The CHEW REPL is responsible for Stop()ing the
+// returned brain on exit.
+func AutoDetectBrain() (*Brain, error) {
+	root, err := repoAnchor()
+	if err != nil {
+		return nil, nil
+	}
+	brainDir := filepath.Join(root, "brain")
+	modelPath := filepath.Join(brainDir, installBrainModelFile)
+
+	info, err := os.Stat(modelPath)
+	if err != nil || info.IsDir() {
+		return nil, nil // not installed
+	}
+	// Guard against a half-finished download lingering as the model
+	// file. Bonsai is ~1.16 GB; anything under 100 MB is incomplete.
+	if info.Size() < 100*1024*1024 {
+		return nil, nil
+	}
+
+	binary, err := acquireLlamaServer(brainDir, nil)
+	if err != nil {
+		return nil, fmt.Errorf("runtime: %w", err)
+	}
+	brain, err := StartBrain(BrainConfig{
+		BinaryPath: binary,
+		ModelPath:  modelPath,
+		Alias:      "ChewBrain",
+		Port:       8080,
+		LogPath:    filepath.Join(brainDir, "brain.log"),
+	})
+	if err != nil {
+		return nil, fmt.Errorf("spawn: %w", err)
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
+	defer cancel()
+	if err := brain.WaitHealthy(ctx); err != nil {
+		_ = brain.Stop()
+		return nil, fmt.Errorf("health: %w", err)
+	}
+	return brain, nil
+}
+
 // runAll executes the three install steps in sequence. Failures along
 // the way always halt the wizard (done=true) with a friendly user-facing
 // message — never leak a path, URL, or stack trace to the user.
@@ -185,14 +238,18 @@ func (w *InstallBrain) runAll(reply func(string)) (bool, error) {
 	}
 	reply(runtimeReadyText)
 
-	// [2/3] download Bonsai
-	reply(downloadStartText)
-	if err := w.downloadFn(installBrainModelURL, w.modelPath, progressCb); err != nil {
-		reply(fmt.Sprintf(downloadFailedText, summariseDownloadErr(err)))
-		w.step = stepAborted
-		return true, err
+	// [2/3] download Bonsai (or skip if already on disk from a prior install)
+	if info, statErr := os.Stat(w.modelPath); statErr == nil && !info.IsDir() && info.Size() >= 100*1024*1024 {
+		reply(downloadSkipText)
+	} else {
+		reply(downloadStartText)
+		if err := w.downloadFn(installBrainModelURL, w.modelPath, progressCb); err != nil {
+			reply(fmt.Sprintf(downloadFailedText, summariseDownloadErr(err)))
+			w.step = stepAborted
+			return true, err
+		}
+		reply(downloadDoneText)
 	}
-	reply(downloadDoneText)
 
 	// [3/3] wake brain (also writes config so subsequent CHEW runs
 	// know where to look).
