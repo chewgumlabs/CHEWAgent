@@ -1,9 +1,16 @@
 // mascot.go — mascot state + terminal rendering for the REPL.
 //
 // CHEW has three states tied to actual system activity:
-//   idle  — waiting for input (frames 0–2)
-//   walk  — verb running / brain thinking (frames 3–5)
-//   ghost — error / brainless / unreachable (frames 6–7)
+//   idle  — waiting for input (CHEW idle frames)
+//   walk  — verb running / brain thinking (CHEW walk frames)
+//   ghost — error / brainless / unreachable (CHEW ghost frames)
+//
+// The TUI can briefly render Gum over the same state machine when the
+// records/planning layer is active. Gum maps the same state names onto her
+// six-frame sheet:
+//   idle  — down frames
+//   walk  — left frames
+//   ghost — up frames
 //
 // The REPL tracks mascot state separately from the output surface. The
 // TUI renderer consumes it for the fixed header; plain text mode keeps
@@ -33,18 +40,33 @@ func (s *mascotState) set(state string) {
 	s.lastTick = time.Now()
 }
 
-// nextFrameIdx returns the frame index to render given the current state.
-func (s *mascotState) nextFrameIdx() int {
+// nextChewFrameIdx returns the CHEW frame index to render for the current state.
+func (s *mascotState) nextChewFrameIdx() int {
 	switch s.current {
 	case "walk":
-		// frames 3, 4, 5
+		// walk_0, walk_1, walk_2
 		return 3 + (s.frameIdx % 3)
 	case "ghost":
-		// frames 6, 7
+		// ghost_0, ghost_1
 		return 6 + (s.frameIdx % 2)
 	default:
-		// idle: frames 0, 1, 2
-		return 0 + (s.frameIdx % 3)
+		// idle_0, idle_1, idle_2
+		return s.frameIdx % 3
+	}
+}
+
+// nextGumFrameIdx returns the Gum frame index to render for the current state.
+func (s *mascotState) nextGumFrameIdx() int {
+	switch s.current {
+	case "walk":
+		// left_0, left_1
+		return 2 + (s.frameIdx % 2)
+	case "ghost":
+		// up_0, up_1
+		return 4 + (s.frameIdx % 2)
+	default:
+		// down_0, down_1
+		return s.frameIdx % 2
 	}
 }
 

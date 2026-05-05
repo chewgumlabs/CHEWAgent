@@ -173,8 +173,8 @@ func runPlainREPL() {
 			default:
 				fmt.Printf("\n(unknown wizard requested: %s)\n", plan.LaunchWizard)
 			}
-			// After any system action lands, render CHEW so the user
-			// comes back to a neutral state before the next prompt.
+			// After any system action lands, return the mascot state to
+			// neutral before the next prompt.
 			state.set("idle")
 		}
 

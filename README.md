@@ -39,7 +39,7 @@ local `go build` only if your platform isn't pre-built.
 
 ```
 $ chew
-[CHEW opens a terminal chat with the frog fixed at the top]
+[CHEW opens a terminal chat with CHEW fixed at the top]
 
 No brain installed yet. Type 'install brain' to set one up.
 ┌──────────────────────────────────────────────────────┐
@@ -138,7 +138,8 @@ Two layers, working in parallel:
 The brain (Bonsai) is the conversational layer. GUM is the situation
 awareness. They're separate on purpose: small models are great at
 language, bad at tracking state, so GUM does the tracking deterministically
-and tells the brain what to focus on each turn.
+and tells the brain what to focus on each turn. CHEW stays the one you talk
+to; Gum can briefly pop into the header during records/tool work.
 
 ---
 

@@ -20,10 +20,12 @@ import (
 )
 
 const (
-	tuiMascotRows = 16
-	tuiHeaderRows = tuiMascotRows + 1
-	tuiMinWidth   = 40
-	tuiMinHeight  = 20
+	tuiMascotRows     = 16
+	tuiHeaderRows     = tuiMascotRows + 1
+	tuiMinWidth       = 40
+	tuiMinHeight      = 20
+	gumBlipDuration   = 1500 * time.Millisecond
+	gumRenderInterval = 450 * time.Millisecond
 )
 
 type tuiApp struct {
@@ -43,6 +45,8 @@ type tuiApp struct {
 	scroll     int
 	width      int
 	height     int
+
+	gumBlipUntil time.Time
 }
 
 func runTUI() error {
@@ -82,7 +86,7 @@ func runTUI() error {
 		os.Exit(0)
 	}()
 
-	tick := time.NewTicker(450 * time.Millisecond)
+	tick := time.NewTicker(gumRenderInterval)
 	defer tick.Stop()
 
 	for {
@@ -93,7 +97,8 @@ func runTUI() error {
 			}
 		case <-tick.C:
 			w, h := terminalSize()
-			if w != app.width || h != app.height || time.Since(app.state.lastTick) > 800*time.Millisecond {
+			gumExpired := app.clearExpiredGumBlip()
+			if w != app.width || h != app.height || gumExpired || app.gumBlipActive() || time.Since(app.state.lastTick) > 800*time.Millisecond {
 				app.state.advance()
 				app.render()
 			}
@@ -286,6 +291,8 @@ func (a *tuiApp) runTurn(input string) bool {
 	}
 
 	for _, v := range plan.Verbs {
+		a.blipGum()
+		a.render()
 		res, err := a.tools.Dispatch(v.Name, v.Params)
 		switch {
 		case errors.Is(err, tool.ErrUnknownTool):
@@ -328,16 +335,40 @@ func (a *tuiApp) runSystemAction(plan planner.Plan) {
 	case "nap_brain":
 		handleNapBrainWithReply(a.p, &a.brain, a.reply)
 	case "open_project":
+		a.blipGum()
+		a.render()
 		handleOpenProjectWithReply(a.p, a.tools, &a.proj, &a.brain, a.brainDir, plan.LaunchArgs["path"], a.reply)
 	case "create_project":
+		a.blipGum()
+		a.render()
 		handleCreateProjectWithReply(a.p, plan.LaunchArgs["name"], a.reply)
 	case "forget_project":
+		a.blipGum()
+		a.render()
 		handleForgetProjectWithReply(a.p, a.tools, &a.proj, &a.brain, a.brainDir, a.reply)
 	case "remember_note":
+		a.blipGum()
+		a.render()
 		handleRememberNoteWithReply(a.p, &a.proj, &a.brain, plan.LaunchArgs["note"], a.reply)
 	default:
 		a.appendBlock(fmt.Sprintf("(unknown wizard requested: %s)", plan.LaunchWizard))
 	}
+}
+
+func (a *tuiApp) blipGum() {
+	a.gumBlipUntil = time.Now().Add(gumBlipDuration)
+}
+
+func (a *tuiApp) gumBlipActive() bool {
+	return !a.gumBlipUntil.IsZero() && time.Now().Before(a.gumBlipUntil)
+}
+
+func (a *tuiApp) clearExpiredGumBlip() bool {
+	if a.gumBlipUntil.IsZero() || time.Now().Before(a.gumBlipUntil) {
+		return false
+	}
+	a.gumBlipUntil = time.Time{}
+	return true
 }
 
 func (a *tuiApp) reply(s string) {
@@ -445,9 +476,13 @@ func (a *tuiApp) render() {
 }
 
 func (a *tuiApp) renderHeader(b *strings.Builder, width int) {
-	frame := chewsprite.RenderFullCellByIndex(a.state.nextFrameIdx(), chewsprite.RenderOptions{
+	opts := chewsprite.RenderOptions{
 		TransparentBg: &[3]uint8{24, 24, 24},
-	})
+	}
+	frame := chewsprite.RenderFullCellByIndex(a.state.nextChewFrameIdx(), opts)
+	if a.gumBlipActive() {
+		frame = chewsprite.RenderGumFullCellByIndex(a.state.nextGumFrameIdx(), opts)
+	}
 	rows := strings.Split(strings.TrimRight(frame, "\n"), "\n")
 	side := a.headerSideText(width)
 	for row := 1; row <= tuiMascotRows; row++ {

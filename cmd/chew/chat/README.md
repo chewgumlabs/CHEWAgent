@@ -86,6 +86,11 @@ assets/    Source art. CHEW_NES.png + CHEW_NES.json (Aseprite export),
 | 3–5 | walk | verb running / brain thinking |
 | 6–7 | ghost | error / brain unreachable / no brain installed |
 
+`assets/nesGUM.png` is also encoded in Go. The chat still talks as CHEW, but
+the TUI can briefly swap the header sprite to Gum for deterministic records
+and tool work: project setup, GUM.md updates, file verbs, shell verbs, and web
+fetch/search.
+
 `mascotState.set(state)` updates the current animation state. Interactive
 sessions render CHEW in a fixed 16-row TUI header with a scrollable dialog
 viewport below it and an input row at the bottom. The TUI owns the viewport
