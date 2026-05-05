@@ -32,8 +32,8 @@ Three steps, all automatic:
   [2/3] grow the brain
   [3/3] wake it up
 
-Reply 'yes' to start, 'tell me more' for the why,
-or 'cancel' to skip.`
+Type 'yes' and press Enter to start. Or 'tell me more' for
+the why, or 'cancel' to skip — same deal, type and Enter.`
 
 // detailsText is shown for "tell me more". No slots.
 var detailsText = `Why I need this:
@@ -46,7 +46,7 @@ The one I picked is small, open-source, and private.
 Nothing leaves your machine. When I close, the brain sleeps.
 When you open me again, it wakes back up.
 
-Type any key to return to the plan.`
+Type 'ok' and press Enter to go back to the plan.`
 
 // runtimeSetupText — opener for step 1. Shown before the wizard tries to
 // find or fetch the runtime; if a download happens the user sees progress

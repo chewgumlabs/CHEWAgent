@@ -169,6 +169,11 @@ func main() {
 			default:
 				fmt.Printf("\n(unknown wizard requested: %s)\n", plan.LaunchWizard)
 			}
+			// After any system action lands, render CHEW so the user
+			// sees him return — closing punctuation on the moment, not
+			// a blank screen leading to the next prompt.
+			state.set("idle")
+			renderMascot(state)
 		}
 
 		// Settle back to idle a moment after a walk action.
