@@ -47,11 +47,11 @@ type InstallBrain struct {
 	platform  string
 
 	// Hooks — replace in tests to avoid network/spawn side effects.
-	findRuntimeFn  func() (string, error)
-	downloadFn     func(url, dest string, progress func(done, total int64)) error
-	startBrainFn   func(cfg BrainConfig) (*Brain, error)
-	waitHealthyFn  func(ctx context.Context, b *Brain) error
-	healthDeadline time.Duration
+	acquireRuntimeFn func(brainDir string, progress func(done, total int64)) (string, error)
+	downloadFn       func(url, dest string, progress func(done, total int64)) error
+	startBrainFn     func(cfg BrainConfig) (*Brain, error)
+	waitHealthyFn    func(ctx context.Context, b *Brain) error
+	healthDeadline   time.Duration
 
 	// Result of a successful run; nil otherwise.
 	brain *Brain
@@ -78,16 +78,16 @@ func NewInstallBrain() *InstallBrain {
 	root, _ := repoAnchor()
 	brainDir := filepath.Join(root, "brain")
 	return &InstallBrain{
-		step:           stepShowPlan,
-		chewHome:       brainDir,
-		modelDir:       brainDir,
-		modelPath:      filepath.Join(brainDir, installBrainModelFile),
-		platform:       runtime.GOOS + "-" + runtime.GOARCH,
-		findRuntimeFn:  findLlamaServer,
-		downloadFn:     defaultDownload,
-		startBrainFn:   StartBrain,
-		waitHealthyFn:  defaultWaitHealthy,
-		healthDeadline: 60 * time.Second,
+		step:             stepShowPlan,
+		chewHome:         brainDir,
+		modelDir:         brainDir,
+		modelPath:        filepath.Join(brainDir, installBrainModelFile),
+		platform:         runtime.GOOS + "-" + runtime.GOARCH,
+		acquireRuntimeFn: acquireLlamaServer,
+		downloadFn:       defaultDownload,
+		startBrainFn:     StartBrain,
+		waitHealthyFn:    defaultWaitHealthy,
+		healthDeadline:   60 * time.Second,
 	}
 }
 
@@ -168,23 +168,25 @@ func (w *InstallBrain) RunningBrain() *Brain {
 // the way always halt the wizard (done=true) with a friendly user-facing
 // message — never leak a path, URL, or stack trace to the user.
 func (w *InstallBrain) runAll(reply func(string)) (bool, error) {
-	// [1/3] runtime
-	binary, err := w.findRuntimeFn()
-	if err != nil {
-		reply(runtimeMissingText)
-		w.step = stepAborted
-		return true, nil
-	}
-	reply(runtimeFoundText)
-
-	// [2/3] download
 	if err := os.MkdirAll(w.modelDir, 0o755); err != nil {
 		reply(fmt.Sprintf(downloadFailedText, "couldn't create my storage folder"))
 		w.step = stepAborted
 		return true, err
 	}
-	reply(downloadStartText)
+
+	// [1/3] runtime — find an existing llama-server or auto-fetch one.
+	reply(runtimeSetupText)
 	progressCb := makeProgressEmitter(reply)
+	binary, err := w.acquireRuntimeFn(w.modelDir, progressCb)
+	if err != nil {
+		reply(fmt.Sprintf(runtimeFailedText, summariseDownloadErr(err)))
+		w.step = stepAborted
+		return true, err
+	}
+	reply(runtimeReadyText)
+
+	// [2/3] download Bonsai
+	reply(downloadStartText)
 	if err := w.downloadFn(installBrainModelURL, w.modelPath, progressCb); err != nil {
 		reply(fmt.Sprintf(downloadFailedText, summariseDownloadErr(err)))
 		w.step = stepAborted

@@ -10,11 +10,7 @@
 // starts the brain at chat-shell launch time (after the wizard has written
 // a config), holds the *Brain reference, and calls Stop() on exit.
 //
-// findLlamaServer locates the binary. Search order:
-//  1. <exe-dir>/bin/llama-server-<GOOS>-<GOARCH>  — the bundled binary, used in
-//     packaged distributions
-//  2. exec.LookPath("llama-server")               — PATH fallback for dev
-//
+// Binary lookup + auto-fetch lives in runtime_install.go (acquireLlamaServer).
 // All knobs are explicit fields on BrainConfig so tests can dial them.
 
 package wizard
@@ -27,7 +23,6 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
-	"runtime"
 	"syscall"
 	"time"
 )
@@ -190,24 +185,5 @@ func (b *Brain) Stop() error {
 	}
 }
 
-// findLlamaServer locates the llama-server binary. Bundled-first, PATH fallback.
-//
-// The bundled path follows: <directory of the running CHEW binary>/bin/llama-server-<GOOS>-<GOARCH>
-// e.g. /Applications/CHEW.app/Contents/MacOS/bin/llama-server-darwin-arm64
-//
-// Returns the absolute path if found, or an error explaining what's missing.
-func findLlamaServer() (string, error) {
-	exe, err := os.Executable()
-	if err == nil {
-		exeDir := filepath.Dir(exe)
-		bundled := filepath.Join(exeDir, "bin", fmt.Sprintf("llama-server-%s-%s", runtime.GOOS, runtime.GOARCH))
-		if info, statErr := os.Stat(bundled); statErr == nil && !info.IsDir() {
-			return bundled, nil
-		}
-	}
-	// PATH fallback for dev environments.
-	if onPath, lookErr := exec.LookPath("llama-server"); lookErr == nil {
-		return onPath, nil
-	}
-	return "", errors.New("llama-server not found (no bundled binary, not on PATH)")
-}
+// (findLlamaServer moved to runtime_install.go as part of acquireLlamaServer,
+// which adds auto-download from llama.cpp releases.)

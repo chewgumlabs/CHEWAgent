@@ -29,8 +29,10 @@ func newTestWizard(t *testing.T) *InstallBrain {
 	w.modelDir = brainDir
 	w.modelPath = filepath.Join(brainDir, installBrainModelFile)
 
-	// Pretend the runtime is bundled.
-	w.findRuntimeFn = func() (string, error) { return "/fake/llama-server", nil }
+	// Pretend the runtime is already on disk — no download.
+	w.acquireRuntimeFn = func(brainDir string, progress func(done, total int64)) (string, error) {
+		return "/fake/llama-server", nil
+	}
 
 	// Pretend download writes some bytes; emit one progress tick at the end.
 	w.downloadFn = func(url, dest string, progress func(done, total int64)) error {
@@ -170,25 +172,30 @@ func TestInstallBrain_HidesPathsInUserText(t *testing.T) {
 	}
 }
 
-func TestInstallBrain_RuntimeMissingHaltsCleanly(t *testing.T) {
+func TestInstallBrain_RuntimeFetchFailureHaltsCleanly(t *testing.T) {
+	// With auto-fetch the realistic failure mode is "couldn't reach the
+	// internet" — the wizard should surrender gracefully without leaking
+	// the technical reason.
 	w := newTestWizard(t)
-	w.findRuntimeFn = func() (string, error) { return "", errors.New("missing") }
+	w.acquireRuntimeFn = func(brainDir string, progress func(done, total int64)) (string, error) {
+		return "", errors.New("no such host")
+	}
 	reply, captured := collect()
 	w.Begin(reply)
 	done, err := w.Step("yes", reply)
-	if err != nil {
-		t.Fatalf("missing runtime should not be a hard error: %v", err)
+	if err == nil {
+		t.Fatalf("runtime fetch failure should surface an error to the caller")
 	}
 	if !done {
-		t.Errorf("missing runtime should halt the wizard (done=true)")
+		t.Errorf("runtime fetch failure should halt the wizard (done=true)")
 	}
 	all := strings.Join(*captured, "\n")
-	if !strings.Contains(all, "packaging") {
-		t.Errorf("user should be told it's a packaging issue, got: %s", all)
+	if !strings.Contains(all, "couldn't reach the internet") {
+		t.Errorf("user should get the friendly network message, got: %s", all)
 	}
-	// And we should NOT have started a download.
+	// And we should NOT have proceeded to the model download.
 	if _, err := os.Stat(w.modelPath); !os.IsNotExist(err) {
-		t.Errorf("model should NOT exist when runtime check failed, stat err=%v", err)
+		t.Errorf("model should NOT exist when runtime fetch failed, stat err=%v", err)
 	}
 }
 

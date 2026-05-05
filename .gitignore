@@ -1,9 +1,15 @@
-# Binaries for programs and plugins
+# Binaries for programs and plugins (catches stray builds anywhere in tree)
 *.exe
 *.exe~
 *.dll
 *.so
 *.dylib
+
+# But DO ship the bundled llama.cpp runtimes under /bin/<platform>/ — those
+# are the whole reason CHEW is plug-and-play on first clone.
+!/bin/**/*.so
+!/bin/**/*.dylib
+!/bin/**/*.exe
 
 # Test binary, built with `go test -c`
 *.test
@@ -11,8 +17,8 @@
 # Output of the go coverage tool
 *.out
 
-# Build cache + module cache
-/bin/
+# Build cache + module cache. Note: /bin/ is NOT ignored — that's where
+# the bundled llama.cpp runtimes live, per platform (e.g. /bin/darwin-arm64/).
 /dist/
 
 # Editor cruft

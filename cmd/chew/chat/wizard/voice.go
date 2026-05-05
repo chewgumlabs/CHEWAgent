@@ -48,20 +48,21 @@ When you open me again, it wakes back up.
 
 Type any key to return to the plan.`
 
-// runtimeOKText — slot %s = path to llama-server (NOT shown to user, used in
-// debug logs). The user-facing line is fixed.
-var runtimeFoundText = `[1/3] Runtime found. Good.`
+// runtimeSetupText — opener for step 1. Shown before the wizard tries to
+// find or fetch the runtime; if a download happens the user sees progress
+// ticks under this line.
+var runtimeSetupText = `[1/3] Setting up the runtime...`
 
-// runtimeMissingText — when the bundled binary is missing AND nothing on
-// PATH. Frog tells the user without naming binaries; install_brain.go logs
-// the gory details.
-var runtimeMissingText = `Hmph. The runtime that drives the brain isn't here.
+// runtimeReadyText — shown once the runtime path is in hand (whether we
+// found one already on disk or just finished downloading + extracting).
+var runtimeReadyText = `[1/3] Runtime ready.`
 
-That's a CHEW packaging issue, not yours. Try reinstalling CHEW —
-the runtime ships in the same download. If it keeps happening,
-this is a bug we'd want to know about.
+// runtimeFailedText — shown when we couldn't fetch the runtime. Slot %s
+// is the friendly summary (e.g. "couldn't reach the internet").
+var runtimeFailedText = `Hmph. Couldn't set up the runtime: %s
 
-*splash*`
+I'll stay brainless for now. Try 'install brain' again
+when the network's back, or reinstall CHEW if it keeps happening.`
 
 // downloadStartText — shown when the actual download begins.
 var downloadStartText = `[2/3] Growing the brain. *croak*`

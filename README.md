@@ -53,11 +53,18 @@ cmd/chew/chat/
 
 ## Status
 
-This is **v0**. The wizard is plug-and-play but the bundled
-`llama-server` binary isn't bundled yet (it falls back to PATH lookup, so
-`brew install llama.cpp` or your distro's equivalent works). The chat
-REPL knows how to *render* verbs but doesn't yet *execute* them — verb
-dispatch is the next change.
+This is **v0**, which means:
+- ✅ `llama-server` is bundled for **macOS arm64** (Apple Silicon). First
+  clone works with zero installs. Other platforms fall back to (a) the
+  per-user runtime cache at `<repo>/brain/runtime/`, (b) `llama-server`
+  on PATH, or (c) auto-fetch from llama.cpp's GitHub releases.
+- ✅ `web_search` and `web_fetch` are wired through the tool registry
+  (DuckDuckGo HTML, no account, fully offline-buildable thanks to
+  vendored deps).
+- ⚠️ Other verbs (`read_file`, `run_command`, `list_dir`, etc.) get
+  *planned* but not *executed* yet — verb dispatch is incremental.
+- ⚠️ Linux + Windows runtime bundles are not in the repo yet; they'll
+  auto-fetch on first install instead.
 
 ## License
 
