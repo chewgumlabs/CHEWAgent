@@ -86,6 +86,7 @@ func runPlainREPL() {
 	switch brainState {
 	case wizard.BrainNapping:
 		fmt.Println("\nBrain installed but napping. Type 'wake up' to load it.")
+		p.SetFallback(brainNappingFallback(p))
 	case wizard.BrainNotInstalled:
 		fmt.Println("\nNo brain installed yet. Type 'install brain' to set one up.")
 	}
@@ -161,7 +162,9 @@ func runPlainREPL() {
 			case "wake_brain":
 				handleWakeBrain(p, &brain, &proj)
 			case "nap_brain":
-				handleNapBrain(p, &brain)
+				handleNapBrain(p, &brain, brainDir)
+			case "brain_status":
+				handleBrainStatus(p, &brain, brainDir)
 			case "profile_status":
 				handleProfileStatus(p, brainDir)
 			case "profile_list":
@@ -225,21 +228,62 @@ func handleWakeBrainWithReply(p *planner.ScriptedPlanner, brain *atomic.Pointer[
 	reply(p.PickVoice("brain_awake"))
 }
 
-// handleNapBrain stops the running brain and restores the brainless
-// fallback. Idempotent.
-func handleNapBrain(p *planner.ScriptedPlanner, brain *atomic.Pointer[wizard.Brain]) {
-	handleNapBrainWithReply(p, brain, printReply)
+// handleNapBrain stops the running brain and restores the fallback that
+// matches the remaining state: installed-but-napping or not installed.
+func handleNapBrain(p *planner.ScriptedPlanner, brain *atomic.Pointer[wizard.Brain], brainDir string) {
+	handleNapBrainWithReply(p, brain, brainDir, printReply)
 }
 
-func handleNapBrainWithReply(p *planner.ScriptedPlanner, brain *atomic.Pointer[wizard.Brain], reply func(string)) {
+func handleNapBrainWithReply(p *planner.ScriptedPlanner, brain *atomic.Pointer[wizard.Brain], brainDir string, reply func(string)) {
 	b := brain.Swap(nil)
 	if b == nil {
 		reply(p.PickVoice("brain_already_napping"))
+		setFallbackForBrainState(p, brainDir)
 		return
 	}
 	_ = b.Stop()
-	p.SetFallback(nil) // restore default brainless fallback
+	setFallbackForBrainState(p, brainDir)
 	reply(p.PickVoice("brain_napping"))
+}
+
+func handleBrainStatus(p *planner.ScriptedPlanner, brain *atomic.Pointer[wizard.Brain], brainDir string) {
+	handleBrainStatusWithReply(p, brain, brainDir, printReply)
+}
+
+func handleBrainStatusWithReply(p *planner.ScriptedPlanner, brain *atomic.Pointer[wizard.Brain], brainDir string, reply func(string)) {
+	if brain.Load() != nil {
+		reply("Brain awake. Ask me anything.")
+		return
+	}
+	brainDir, err := resolveBrainDir(brainDir)
+	if err != nil {
+		reply("No brain installed yet. Type 'install brain' to set one up.")
+		return
+	}
+	switch wizard.CheckBrainAt(brainDir) {
+	case wizard.BrainNapping:
+		reply("Brain installed but napping. Type 'wake up' to load it.")
+	default:
+		reply("No brain installed yet. Type 'install brain' to set one up.")
+	}
+}
+
+func brainNappingFallback(p *planner.ScriptedPlanner) func(string) planner.Plan {
+	return func(input string) planner.Plan {
+		return planner.Plan{
+			Response: p.PickVoice("brain_sleeping_fallback"),
+			Mascot:   "idle",
+		}
+	}
+}
+
+func setFallbackForBrainState(p *planner.ScriptedPlanner, brainDir string) {
+	brainDir, err := resolveBrainDir(brainDir)
+	if err == nil && wizard.CheckBrainAt(brainDir) == wizard.BrainNapping {
+		p.SetFallback(brainNappingFallback(p))
+		return
+	}
+	p.SetFallback(nil)
 }
 
 func handleProfileStatus(p *planner.ScriptedPlanner, brainDir string) {
@@ -297,6 +341,7 @@ func handleProfileUseWithReply(p *planner.ScriptedPlanner, brain *atomic.Pointer
 		reply(fmt.Sprintf(p.PickVoice("project_failed"), err.Error()))
 		return
 	}
+	setFallbackForBrainState(p, brainDir)
 	reply(fmt.Sprintf("Active brain profile: %s\nUse 'wake up' to load or connect it.", prof.Name))
 }
 

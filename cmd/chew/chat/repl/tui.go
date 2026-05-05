@@ -128,6 +128,7 @@ func (a *tuiApp) startup() {
 	switch brainState {
 	case wizard.BrainNapping:
 		a.appendBlock("Brain installed but napping. Type 'wake up' to load it.")
+		a.p.SetFallback(brainNappingFallback(a.p))
 	case wizard.BrainNotInstalled:
 		a.appendBlock("No brain installed yet. Type 'install brain' to set one up.")
 	}
@@ -333,7 +334,9 @@ func (a *tuiApp) runSystemAction(plan planner.Plan) {
 			a.brainInstalled = true
 		}
 	case "nap_brain":
-		handleNapBrainWithReply(a.p, &a.brain, a.reply)
+		handleNapBrainWithReply(a.p, &a.brain, a.brainDir, a.reply)
+	case "brain_status":
+		handleBrainStatusWithReply(a.p, &a.brain, a.brainDir, a.reply)
 	case "profile_status":
 		handleProfileStatusWithReply(a.p, a.brainDir, a.reply)
 	case "profile_list":
@@ -341,6 +344,7 @@ func (a *tuiApp) runSystemAction(plan planner.Plan) {
 	case "profile_use":
 		handleProfileUseWithReply(a.p, &a.brain, a.brainDir, plan.LaunchArgs["name"], a.reply)
 		a.brainInstalled = wizard.CheckBrainAt(a.brainDir) == wizard.BrainNapping
+		setFallbackForBrainState(a.p, a.brainDir)
 	case "open_project":
 		a.blipGum()
 		a.render()

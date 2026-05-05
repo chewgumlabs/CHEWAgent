@@ -150,16 +150,6 @@ var responsePools = map[string][]string{
 		`Off you go. Hmph.`,
 	},
 
-	// status — "are you smart yet?"
-	// Slots: none. Each variant MUST contain the lowercase literal
-	// "brainless" (asserted by tests; also load-bearing for UX).
-	"status": {
-		`Status: brainless frog. Verbs yes, thinking no. 'install brain' fixes the thinking part.`,
-		`I'm brainless. Wet. Stuck in a machine. Standard.`,
-		`Brainless frog reporting. *croak* The deterministic stuff works. 'install brain' to upgrade me.`,
-		`I'm brainless and a frog. Run 'install brain' to make me sharper.`,
-	},
-
 	// fallback — nothing matched. The free-form questions land here.
 	// Slots: %q = the user's input (already truncated).
 	// MUST contain the literal "install brain" — the user needs the hint,
@@ -214,7 +204,15 @@ var responsePools = map[string][]string{
 	"brain_already_napping": {
 		`Brain's already napping. Hmph.`,
 		`Already off. *splash*`,
-		`Nothing to put to sleep — I'm brainless right now.`,
+		`Nothing to put to sleep. Quiet enough already.`,
+	},
+
+	// brain_sleeping_fallback — free-form input while a brain is installed
+	// but asleep. This should not claim the brain is missing.
+	"brain_sleeping_fallback": {
+		`Brain's installed, just asleep. Type 'wake up' and ask me again.`,
+		`Hmph. Brain is napping. 'wake up' first, then talk.`,
+		`I've got a brain on disk, not in memory. Type 'wake up'.`,
 	},
 
 	// brain_not_installed — shown when 'wake up' has nothing to load.

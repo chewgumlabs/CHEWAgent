@@ -99,6 +99,54 @@ func TestProfileUseRejectsWhileBrainAwake(t *testing.T) {
 	}
 }
 
+func TestBrainStatusReflectsActualState(t *testing.T) {
+	p := planner.NewScriptedPlanner()
+	brainDir := filepath.Join(t.TempDir(), "brain")
+	seedProfileConfig(t, brainDir)
+	if _, _, err := wizard.SetActiveProfile(brainDir, "qwen"); err != nil {
+		t.Fatal(err)
+	}
+	var brain atomic.Pointer[wizard.Brain]
+	var replies []string
+
+	handleBrainStatusWithReply(p, &brain, brainDir, func(s string) {
+		replies = append(replies, s)
+	})
+	if len(replies) != 1 || !strings.Contains(replies[0], "napping") {
+		t.Fatalf("napping status should say napping, got %v", replies)
+	}
+
+	brain.Store(wizard.AttachBrain("http://127.0.0.1:9911", "qwen3.5"))
+	handleBrainStatusWithReply(p, &brain, brainDir, func(s string) {
+		replies = append(replies, s)
+	})
+	if !strings.Contains(replies[len(replies)-1], "awake") {
+		t.Fatalf("awake status should say awake, got %v", replies)
+	}
+}
+
+func TestNappingFallbackDoesNotClaimBrainMissing(t *testing.T) {
+	p := planner.NewScriptedPlanner()
+	brainDir := filepath.Join(t.TempDir(), "brain")
+	seedProfileConfig(t, brainDir)
+	if _, _, err := wizard.SetActiveProfile(brainDir, "qwen"); err != nil {
+		t.Fatal(err)
+	}
+
+	setFallbackForBrainState(p, brainDir)
+	got := p.Plan("hello!")
+	if got.Mascot == "ghost" {
+		t.Fatalf("napping fallback should not use ghost mascot: %+v", got)
+	}
+	lower := strings.ToLower(got.Response)
+	if strings.Contains(lower, "install brain") || strings.Contains(lower, "brainless") {
+		t.Fatalf("napping fallback should suggest wake up, not install brain: %q", got.Response)
+	}
+	if !strings.Contains(lower, "wake up") {
+		t.Fatalf("napping fallback should mention wake up: %q", got.Response)
+	}
+}
+
 func TestBrainChatUsesProfileAlias(t *testing.T) {
 	brain := wizard.AttachBrain("http://127.0.0.1:9911/v1", "qwen3.5")
 

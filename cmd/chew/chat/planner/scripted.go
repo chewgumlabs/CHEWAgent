@@ -87,9 +87,15 @@ func (p *ScriptedPlanner) Plan(input string) Plan {
 	if trimmed == "" {
 		return Plan{Response: ""} // silent no-op on empty input
 	}
+	normalized := normalizeCommandIntent(trimmed)
 	for _, r := range p.rules {
 		if matches := r.pattern.FindStringSubmatch(trimmed); matches != nil {
 			return r.handler(matches)
+		}
+		if normalized != trimmed {
+			if matches := r.pattern.FindStringSubmatch(normalized); matches != nil {
+				return r.handler(matches)
+			}
 		}
 	}
 	return p.fallback(trimmed)
@@ -133,6 +139,33 @@ func truncate(s string, n int) string {
 	return s[:n-3] + "..."
 }
 
+func normalizeCommandIntent(s string) string {
+	out := strings.TrimSpace(s)
+	if out == "" || out == "?" {
+		return out
+	}
+	out = strings.TrimSpace(strings.TrimRight(out, ".!?"))
+	out = stripFoldPrefix(out, "please ")
+	out = stripFoldSuffix(out, " please")
+	out = stripFoldPrefix(out, "can you ")
+	out = stripFoldPrefix(out, "could you ")
+	return strings.TrimSpace(out)
+}
+
+func stripFoldPrefix(s, prefix string) string {
+	if strings.HasPrefix(strings.ToLower(s), prefix) {
+		return s[len(prefix):]
+	}
+	return s
+}
+
+func stripFoldSuffix(s, suffix string) string {
+	if strings.HasSuffix(strings.ToLower(s), suffix) {
+		return s[:len(s)-len(suffix)]
+	}
+	return s
+}
+
 // ----- core vocabulary -----
 
 // registerCoreVocabulary wires up the v0 command set: ~15 patterns covering
@@ -168,8 +201,8 @@ func registerCoreVocabulary(p *ScriptedPlanner) {
 	})
 
 	// nap / sleep — signal the REPL to stop the running brain and free
-	// memory. Subsequent free-form questions go back to the brainless
-	// fallback until the user types 'wake up' again.
+	// memory. The REPL decides whether fallback should say "wake up" or
+	// "install brain" based on the actual brain state.
 	p.Add(`(?i)^(nap|sleep|sleep brain|stop brain)$`, func(_ []string) Plan {
 		return Plan{LaunchWizard: "nap_brain", Mascot: "idle"}
 	})
@@ -417,7 +450,7 @@ func registerCoreVocabulary(p *ScriptedPlanner) {
 
 	// brain status check
 	p.Add(`(?i)^(status|brain|are you smart|are you ok)$`, func(_ []string) Plan {
-		return Plan{Response: p.pick("status"), Mascot: "ghost"}
+		return Plan{LaunchWizard: "brain_status", Mascot: "idle"}
 	})
 
 	// "who is shane / who made you / who created chew" — point at the

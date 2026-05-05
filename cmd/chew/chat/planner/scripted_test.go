@@ -123,27 +123,28 @@ func TestScripted_EmptyInputSilent(t *testing.T) {
 	}
 }
 
-func TestScripted_StatusReportsBrainless(t *testing.T) {
+func TestScripted_StatusTriggersBrainStatus(t *testing.T) {
 	p := NewScriptedPlanner()
-	got := p.Plan("status")
-	if !strings.Contains(got.Response, "brainless") {
-		t.Errorf("status should mention brainless, got: %s", got.Response)
-	}
-	if got.Mascot != "ghost" {
-		t.Errorf("status should set mascot=ghost, got %s", got.Mascot)
+	for _, in := range []string{"status", "brain?", "are you ok?"} {
+		got := p.Plan(in)
+		if got.LaunchWizard != "brain_status" {
+			t.Errorf("input %q: expected LaunchWizard=brain_status, got %q", in, got.LaunchWizard)
+		}
 	}
 }
 
 func TestScripted_InstallBrainSignalsWizardHandoff(t *testing.T) {
 	p := NewScriptedPlanner()
-	got := p.Plan("install brain")
-	if got.LaunchWizard != "install_brain" {
-		t.Errorf("install brain should set LaunchWizard=install_brain, got %q", got.LaunchWizard)
-	}
-	// The wizard owns all the user-facing text now, so the planner shouldn't
-	// pre-render anything that'd duplicate the wizard's plan screen.
-	if got.Response != "" {
-		t.Errorf("planner should not return its own text for install brain, got: %s", got.Response)
+	for _, in := range []string{"install brain", "install brain!"} {
+		got := p.Plan(in)
+		if got.LaunchWizard != "install_brain" {
+			t.Errorf("input %q: expected LaunchWizard=install_brain, got %q", in, got.LaunchWizard)
+		}
+		// The wizard owns all the user-facing text now, so the planner shouldn't
+		// pre-render anything that'd duplicate the wizard's plan screen.
+		if got.Response != "" {
+			t.Errorf("planner should not return its own text for install brain, got: %s", got.Response)
+		}
 	}
 }
 
@@ -314,7 +315,7 @@ func TestScripted_LocalSearchStillLocal(t *testing.T) {
 
 func TestScripted_WakeBrainTriggers(t *testing.T) {
 	p := NewScriptedPlanner()
-	for _, in := range []string{"wake up", "wake", "wake brain", "start brain"} {
+	for _, in := range []string{"wake up", "wake", "wake brain", "start brain", "wake up!", "can you wake up?", "please wake up"} {
 		got := p.Plan(in)
 		if got.LaunchWizard != "wake_brain" {
 			t.Errorf("input %q: expected LaunchWizard=wake_brain, got %q", in, got.LaunchWizard)
@@ -324,7 +325,7 @@ func TestScripted_WakeBrainTriggers(t *testing.T) {
 
 func TestScripted_NapBrainTriggers(t *testing.T) {
 	p := NewScriptedPlanner()
-	for _, in := range []string{"nap", "sleep", "sleep brain", "stop brain"} {
+	for _, in := range []string{"nap", "sleep", "sleep brain", "stop brain", "nap!"} {
 		got := p.Plan(in)
 		if got.LaunchWizard != "nap_brain" {
 			t.Errorf("input %q: expected LaunchWizard=nap_brain, got %q", in, got.LaunchWizard)
