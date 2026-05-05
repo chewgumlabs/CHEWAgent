@@ -15,7 +15,9 @@ package project
 import (
 	"errors"
 	"fmt"
+	"io"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"strings"
 )
@@ -54,7 +56,10 @@ func Open(path string) (*Project, error) {
 }
 
 // Create makes a new folder at the given path and seeds it with a
-// starter GUM.md. Refuses to overwrite an existing folder.
+// starter GUM.md. If `git` is on PATH we silently `git init` the folder
+// and commit the starter GUM as the first save point — gives the user
+// version-control memory automatically without making them learn git.
+// Refuses to overwrite an existing folder.
 func Create(path string) (*Project, error) {
 	abs, err := resolvePath(path)
 	if err != nil {
@@ -74,7 +79,50 @@ func Create(path string) (*Project, error) {
 		return p, fmt.Errorf("created folder but couldn't write GUM.md: %w", err)
 	}
 	p.GUM = gum
+	// Best-effort: make this a git repo with one save point. Failure is
+	// silent — git might not be installed, and the project still works.
+	_ = initGitRepo(abs)
 	return p, nil
+}
+
+// initGitRepo runs `git init`, stages GUM.md, and creates an initial
+// commit. Anything that fails is swallowed — git is a nice-to-have for
+// version-control memory, not a blocker.
+func initGitRepo(dir string) error {
+	if _, err := exec.LookPath("git"); err != nil {
+		return nil
+	}
+	run := func(args ...string) error {
+		cmd := exec.Command("git", args...)
+		cmd.Dir = dir
+		// Quiet output; we don't show the user any git noise.
+		cmd.Stdout = io.Discard
+		cmd.Stderr = io.Discard
+		// Don't let the user's global git config (signed commits, etc.)
+		// trip us up on a brand-new repo.
+		cmd.Env = append(os.Environ(),
+			"GIT_AUTHOR_NAME=CHEW",
+			"GIT_AUTHOR_EMAIL=chew@chewgumlabs.local",
+			"GIT_COMMITTER_NAME=CHEW",
+			"GIT_COMMITTER_EMAIL=chew@chewgumlabs.local",
+		)
+		return cmd.Run()
+	}
+	// Use main as the default branch; stay on the main side of the
+	// historical branch-naming debate.
+	if err := run("init", "-q", "-b", "main"); err != nil {
+		// Older git versions don't support -b. Try without it.
+		if err := run("init", "-q"); err != nil {
+			return err
+		}
+	}
+	if err := run("add", "GUM.md"); err != nil {
+		return err
+	}
+	if err := run("commit", "-q", "--no-gpg-sign", "-m", "first save point: GUM.md"); err != nil {
+		return err
+	}
+	return nil
 }
 
 // GUMPath returns the absolute path to the project's GUM.md.

@@ -149,18 +149,19 @@ func main() {
 				if newBrain != nil {
 					stopBrain() // drop any prior brain (shouldn't happen but safe)
 					brain.Store(newBrain)
-					p.SetFallback(brainFallback(newBrain))
+					name, gum := projectContext(&proj)
+					p.SetFallback(brainFallback(newBrain, name, gum))
 				}
 			case "wake_brain":
-				handleWakeBrain(p, &brain)
+				handleWakeBrain(p, &brain, &proj)
 			case "nap_brain":
 				handleNapBrain(p, &brain)
 			case "open_project":
-				handleOpenProject(p, &proj, brainDir, plan.LaunchArgs["path"])
+				handleOpenProject(p, &proj, &brain, brainDir, plan.LaunchArgs["path"])
 			case "create_project":
 				handleCreateProject(p, plan.LaunchArgs["name"])
 			case "forget_project":
-				handleForgetProject(p, &proj, brainDir)
+				handleForgetProject(p, &proj, &brain, brainDir)
 			default:
 				fmt.Printf("\n(unknown wizard requested: %s)\n", plan.LaunchWizard)
 			}
@@ -178,7 +179,7 @@ func main() {
 
 // handleWakeBrain spawns the brain on demand. Idempotent: a no-op if the
 // brain is already loaded.
-func handleWakeBrain(p *planner.ScriptedPlanner, brain *atomic.Pointer[wizard.Brain]) {
+func handleWakeBrain(p *planner.ScriptedPlanner, brain *atomic.Pointer[wizard.Brain], proj *atomic.Pointer[project.Project]) {
 	if brain.Load() != nil {
 		fmt.Println()
 		fmt.Println(p.PickVoice("brain_already_awake"))
@@ -199,9 +200,23 @@ func handleWakeBrain(p *planner.ScriptedPlanner, brain *atomic.Pointer[wizard.Br
 		return
 	}
 	brain.Store(newBrain)
-	p.SetFallback(brainFallback(newBrain))
+	// Pass the active project's GUM to the brain so free-form questions
+	// land in the right context.
+	name, gum := projectContext(proj)
+	p.SetFallback(brainFallback(newBrain, name, gum))
 	fmt.Println()
 	fmt.Println(p.PickVoice("brain_awake"))
+}
+
+// projectContext returns the active project's name + GUM raw body.
+// Both empty if no project is active. The two values are spread into
+// brainFallback's (projectName, projectGUM) parameters.
+func projectContext(proj *atomic.Pointer[project.Project]) (string, string) {
+	pj := proj.Load()
+	if pj == nil {
+		return "", ""
+	}
+	return pj.Name, pj.GUM.Raw
 }
 
 // handleNapBrain stops the running brain and restores the brainless
@@ -221,8 +236,9 @@ func handleNapBrain(p *planner.ScriptedPlanner, brain *atomic.Pointer[wizard.Bra
 
 // handleOpenProject sets up shop in the given folder. The folder must
 // exist; if there's no GUM.md, we write a starter so CHEW has something
-// to read next time.
-func handleOpenProject(p *planner.ScriptedPlanner, proj *atomic.Pointer[project.Project], brainDir, path string) {
+// to read next time. If the brain is currently awake, its system prompt
+// is refreshed so the new project's GUM lands in context.
+func handleOpenProject(p *planner.ScriptedPlanner, proj *atomic.Pointer[project.Project], brain *atomic.Pointer[wizard.Brain], brainDir, path string) {
 	if path == "" {
 		fmt.Println()
 		fmt.Println(fmt.Sprintf(p.PickVoice("project_failed"), "no path given"))
@@ -254,6 +270,14 @@ func handleOpenProject(p *planner.ScriptedPlanner, proj *atomic.Pointer[project.
 	}
 	proj.Store(pj)
 	_ = project.SaveLast(brainDir, pj.Path)
+
+	// If the brain is awake, refresh its system prompt so the LLM has
+	// the new project's GUM in context. (No model reload — just a fresh
+	// chat session with the updated prompt.)
+	if b := brain.Load(); b != nil {
+		name, gum := projectContext(proj)
+		p.SetFallback(brainFallback(b, name, gum))
+	}
 
 	fmt.Println()
 	fmt.Println(fmt.Sprintf(p.PickVoice("project_opened"), pj.Name, gumStatus))
@@ -293,9 +317,14 @@ func handleCreateProject(p *planner.ScriptedPlanner, name string) {
 }
 
 // handleForgetProject clears the active project and the saved last-project.
-func handleForgetProject(p *planner.ScriptedPlanner, proj *atomic.Pointer[project.Project], brainDir string) {
+// If the brain is awake, its system prompt is refreshed without project
+// context — the brain forgets the project the same moment the chat does.
+func handleForgetProject(p *planner.ScriptedPlanner, proj *atomic.Pointer[project.Project], brain *atomic.Pointer[wizard.Brain], brainDir string) {
 	proj.Store(nil)
 	_ = project.ClearLast(brainDir)
+	if b := brain.Load(); b != nil {
+		p.SetFallback(brainFallback(b, "", ""))
+	}
 	fmt.Println()
 	fmt.Println(p.PickVoice("project_forgotten"))
 }

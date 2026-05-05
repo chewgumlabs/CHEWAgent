@@ -16,6 +16,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"net/http"
+	"strings"
 	"time"
 
 	"github.com/chewgumlabs/CHEWAgent/cmd/chew/chat/planner"
@@ -34,6 +35,32 @@ problems. For specific local actions (reading files, running commands, searching
 the web, fetching URLs) the user has direct commands like 'read', 'ls',
 'web search', 'fetch' — suggest those rather than pretending you ran them.`
 
+// buildSystemPrompt composes the system message sent to the brain. If a
+// project is active and its GUM.md is non-empty, the GUM content is
+// folded in below the character preamble so the LLM knows what we're
+// working on.
+//
+// projectName + projectGUM may be empty — chats outside a project skip
+// the project block.
+func buildSystemPrompt(projectName, projectGUM string) string {
+	if projectName == "" && strings.TrimSpace(projectGUM) == "" {
+		return chewSystemPrompt
+	}
+	var b strings.Builder
+	b.WriteString(chewSystemPrompt)
+	b.WriteString("\n\n--- current project context ---\n")
+	if projectName != "" {
+		fmt.Fprintf(&b, "You're currently working in a project called '%s'.\n", projectName)
+	}
+	if strings.TrimSpace(projectGUM) != "" {
+		b.WriteString("The user (or you, on a previous session) has captured the project's intent and ground truth in GUM.md. Treat it as the source of truth for what we're working on:\n\n")
+		b.WriteString(strings.TrimSpace(projectGUM))
+		b.WriteString("\n")
+	}
+	b.WriteString("--- end project context ---\n")
+	return b.String()
+}
+
 type chatMessage struct {
 	Role    string `json:"role"`
 	Content string `json:"content"`
@@ -47,7 +74,10 @@ type chatSession struct {
 	messages []chatMessage
 }
 
-func newChatSession(b *wizard.Brain) *chatSession {
+// newChatSession builds a fresh conversation. projectName + projectGUM
+// are both optional; when non-empty, the project context lands in the
+// system prompt so the brain knows what we're working on.
+func newChatSession(b *wizard.Brain, projectName, projectGUM string) *chatSession {
 	return &chatSession{
 		endpoint: b.Endpoint() + "/v1/chat/completions",
 		alias:    "ChewBrain",
@@ -55,7 +85,7 @@ func newChatSession(b *wizard.Brain) *chatSession {
 		// we don't want to interrupt it. The user can Ctrl-C if needed.
 		client: &http.Client{Timeout: 0},
 		messages: []chatMessage{
-			{Role: "system", Content: chewSystemPrompt},
+			{Role: "system", Content: buildSystemPrompt(projectName, projectGUM)},
 		},
 	}
 }
@@ -109,9 +139,11 @@ func (s *chatSession) ask(input string) (string, error) {
 
 // brainFallback returns a planner.SetFallback-compatible function that
 // routes free-form queries through the brain. The session's history
-// persists across calls so the conversation has memory.
-func brainFallback(b *wizard.Brain) func(input string) planner.Plan {
-	sess := newChatSession(b)
+// persists across calls so the conversation has memory. projectName +
+// projectGUM, if non-empty, get folded into the system prompt so the
+// brain has project context.
+func brainFallback(b *wizard.Brain, projectName, projectGUM string) func(input string) planner.Plan {
+	sess := newChatSession(b, projectName, projectGUM)
 	return func(input string) planner.Plan {
 		reply, err := sess.ask(input)
 		if err != nil {

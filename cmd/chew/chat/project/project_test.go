@@ -91,6 +91,33 @@ func TestCreate_RefusesExistingFolder(t *testing.T) {
 	}
 }
 
+func TestCreate_InitsGitWhenAvailable(t *testing.T) {
+	if _, err := os.Stat("/usr/bin/git"); err != nil {
+		if _, err2 := os.Stat("/opt/homebrew/bin/git"); err2 != nil {
+			t.Skip("git not on common paths; skipping")
+		}
+	}
+	tmp := t.TempDir()
+	target := filepath.Join(tmp, "gitted")
+	p, err := Create(target)
+	if err != nil {
+		t.Fatalf("Create: %v", err)
+	}
+	gitDir := filepath.Join(p.Path, ".git")
+	info, err := os.Stat(gitDir)
+	if err != nil || !info.IsDir() {
+		t.Errorf(".git dir should exist after Create; got err=%v info=%v", err, info)
+	}
+	// Should also have a HEAD pointing at a real ref (i.e. one commit landed).
+	head, err := os.ReadFile(filepath.Join(gitDir, "HEAD"))
+	if err != nil {
+		t.Fatalf("read HEAD: %v", err)
+	}
+	if !strings.Contains(string(head), "ref: refs/heads/") {
+		t.Errorf("HEAD should reference a branch, got: %q", head)
+	}
+}
+
 func TestResolvePath_TrimsQuotes(t *testing.T) {
 	tmp := t.TempDir()
 	quoted := `'` + tmp + `'`
