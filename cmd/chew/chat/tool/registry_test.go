@@ -12,8 +12,8 @@ type fakeTool struct {
 	err  error
 }
 
-func (f *fakeTool) Name() string                                 { return f.name }
-func (f *fakeTool) Execute(_ map[string]any) (Result, error)     { return f.res, f.err }
+func (f *fakeTool) Name() string                             { return f.name }
+func (f *fakeTool) Execute(_ map[string]any) (Result, error) { return f.res, f.err }
 
 func TestRegistry_DispatchUnknown(t *testing.T) {
 	r := NewRegistry()
@@ -67,7 +67,7 @@ func TestRegistry_DispatchPropagatesToolError(t *testing.T) {
 
 func TestRegistry_NewDefaultHasAllStandardTools(t *testing.T) {
 	r := NewDefault()
-	want := []string{"web_search", "web_fetch", "read_file", "list_dir", "search", "write_file", "run_command"}
+	want := []string{"web_search", "web_fetch", "read_file", "list_dir", "search", "write_file", "run_command", "preview"}
 	for _, name := range want {
 		if !r.Has(name) {
 			t.Errorf("NewDefault should register %q", name)

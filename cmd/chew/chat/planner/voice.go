@@ -82,6 +82,14 @@ var responsePools = map[string][]string{
 		`%s. Hmph. Doing it.`,
 	},
 
+	// preview — start/open/status/stop the local static preview server.
+	// Slot: %s = action phrase.
+	"preview": {
+		`%s. Hmph.`,
+		`%s. Fine.`,
+		`%s. Let me get the window ready.`,
+	},
+
 	// web_search — search the open web (DuckDuckGo).
 	// Slots: %q = the query (engine adds the quotes).
 	"web_search": {
@@ -337,6 +345,9 @@ var helpBody = `  read <file>           print file contents
   write <file>          create a new file
   find <pattern>        search files for a pattern
   run <command>         run a shell command
+  preview               serve the project website locally
+  preview open          open the local website preview in a browser
+  preview status|stop   check or stop the preview server
   git status|diff|log   read-only git operations
   pwd                   show current directory
   web search <query>    search the open web

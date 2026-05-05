@@ -61,6 +61,7 @@ func NewRegistry() *Registry {
 //   - search       walk a tree, regex-match lines (100-hit cap)
 //   - write_file   create a new file; refuses to overwrite
 //   - run_command  exec via sh -c (30s timeout, 8 KB output cap)
+//   - preview      build/reuse a local static preview server
 func NewDefault() *Registry {
 	r := NewRegistry()
 	r.Register(&WebSearch{})
@@ -70,6 +71,7 @@ func NewDefault() *Registry {
 	r.Register(&Search{Root: &r.root})
 	r.Register(&WriteFile{Root: &r.root})
 	r.Register(&RunCommand{Root: &r.root})
+	r.Register(&Preview{Root: &r.root})
 	return r
 }
 

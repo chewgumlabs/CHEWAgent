@@ -211,6 +211,36 @@ func registerCoreVocabulary(p *ScriptedPlanner) {
 		return Plan{Response: p.pick("remember_empty"), Mascot: "idle"}
 	})
 
+	// preview — start/reuse a local website preview for the active project.
+	p.Add(`(?i)^(preview|start preview|serve|serve site|show preview)$`, func(_ []string) Plan {
+		return Plan{
+			Verbs:    []Verb{{Name: "preview", Params: map[string]any{"action": "start"}}},
+			Response: fmt.Sprintf(p.pick("preview"), "Starting preview"),
+			Mascot:   "walk",
+		}
+	})
+	p.Add(`(?i)^(preview open|open preview|open site|show site|show me the site)$`, func(_ []string) Plan {
+		return Plan{
+			Verbs:    []Verb{{Name: "preview", Params: map[string]any{"action": "open"}}},
+			Response: fmt.Sprintf(p.pick("preview"), "Opening preview"),
+			Mascot:   "walk",
+		}
+	})
+	p.Add(`(?i)^(preview status|status preview)$`, func(_ []string) Plan {
+		return Plan{
+			Verbs:    []Verb{{Name: "preview", Params: map[string]any{"action": "status"}}},
+			Response: fmt.Sprintf(p.pick("preview"), "Checking preview"),
+			Mascot:   "walk",
+		}
+	})
+	p.Add(`(?i)^(preview stop|stop preview)$`, func(_ []string) Plan {
+		return Plan{
+			Verbs:    []Verb{{Name: "preview", Params: map[string]any{"action": "stop"}}},
+			Response: fmt.Sprintf(p.pick("preview"), "Stopping preview"),
+			Mascot:   "walk",
+		}
+	})
+
 	// (No regex-based "you sound like you want to build a website" intent
 	// detection. That kind of natural-language understanding is the
 	// brain's job, not a hardcoded keyword list. Without the brain, free-

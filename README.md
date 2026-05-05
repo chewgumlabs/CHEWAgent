@@ -45,8 +45,8 @@ No brain installed yet. Type 'install brain' to set one up.
 ┌──────────────────────────────────────────────────────┐
 │ CHEW chat                                            │
 │ Commands: read, ls, write, find, run, git, web,      │
-│ fetch, remember, install brain, wake up, nap,        │
-│ help, quit.                                          │
+│ fetch, preview, remember, install brain, wake up,    │
+│ nap, help, quit.                                     │
 └──────────────────────────────────────────────────────┘
 
 > install brain
@@ -72,6 +72,9 @@ No brain installed yet. Type 'install brain' to set one up.
 | `write <file>` | create a new file (refuses to overwrite) |
 | `find <pattern>` | regex-search the tree (skips `.git`, `node_modules`, binary files) |
 | `run <command>` | shell command, 30s timeout, 8 KB output cap |
+| `preview` | start or reuse a local static website preview |
+| `preview open` | start or reuse the preview and open it in a browser |
+| `preview status \| stop` | inspect or stop the preview server |
 | `pwd` | current directory |
 
 ### Web (no key, no account, no JS)
@@ -105,6 +108,14 @@ Each project carries a **`GUM.md`** — CHEW's per-project memory. He
 reads it on arrival to catch up on what's true, and edits it as
 significant decisions land. Edit the file yourself to teach him what
 to remember.
+
+Preview runtime files live under **`.chew/runtime/`** and are ignored by
+`.chew/.gitignore`. That leaves room for portable project metadata to live
+beside `GUM.md` later without dragging local server PIDs and logs between
+machines.
+
+`preview` runs `make build` when the project has a `build` target, then
+serves `site/`, `dist/`, `public/`, or a root `index.html` on localhost.
 
 ### Brain (the LLM)
 
@@ -140,6 +151,12 @@ awareness. They're separate on purpose: small models are great at
 language, bad at tracking state, so GUM does the tracking deterministically
 and tells the brain what to focus on each turn. CHEW stays the one you talk
 to; Gum can briefly pop into the header during records/tool work.
+
+Naming-wise, this repo is the public **`chew.agent`** chassis: the local
+CLI, deterministic verbs, GUM project memory, mascot shell, and small-model
+hooks. Public, reusable machinery belongs here. Private orchestration can
+layer on top as **`chew.internal`**, sharing the same core behavior without
+shipping private workspace assumptions.
 
 ---
 

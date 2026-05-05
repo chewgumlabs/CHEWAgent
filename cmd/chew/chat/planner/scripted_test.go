@@ -193,6 +193,38 @@ func TestScripted_WebFetch_OnURL(t *testing.T) {
 	}
 }
 
+func TestScripted_PreviewCommands(t *testing.T) {
+	p := NewScriptedPlanner()
+	cases := []struct {
+		in     string
+		action string
+	}{
+		{"preview", "start"},
+		{"start preview", "start"},
+		{"serve", "start"},
+		{"preview open", "open"},
+		{"open preview", "open"},
+		{"show site", "open"},
+		{"preview status", "status"},
+		{"status preview", "status"},
+		{"preview stop", "stop"},
+		{"stop preview", "stop"},
+	}
+	for _, c := range cases {
+		got := p.Plan(c.in)
+		if len(got.Verbs) != 1 || got.Verbs[0].Name != "preview" {
+			t.Errorf("input %q: expected one preview verb, got %+v", c.in, got.Verbs)
+			continue
+		}
+		if got.Verbs[0].Params["action"] != c.action {
+			t.Errorf("input %q: expected action=%q, got %v", c.in, c.action, got.Verbs[0].Params["action"])
+		}
+		if got.Mascot != "walk" {
+			t.Errorf("input %q: preview should set mascot=walk, got %s", c.in, got.Mascot)
+		}
+	}
+}
+
 func TestScripted_ReadFileStillRoutesToReadFile(t *testing.T) {
 	// Make sure adding web_fetch in front of `read` didn't steal local file
 	// reads. URL-less paths must still route to read_file.

@@ -423,8 +423,8 @@ func brainlessIntroText() string {
 		"┌──────────────────────────────────────────────────────┐",
 		"│ CHEW chat                                            │",
 		"│ Commands: read, ls, write, find, run, git, web,      │",
-		"│ fetch, remember, install brain, wake up, nap,        │",
-		"│ help, quit.                                          │",
+		"│ fetch, preview, remember, install brain, wake up,    │",
+		"│ nap, help, quit.                                     │",
 		"└──────────────────────────────────────────────────────┘",
 	}, "\n")
 }
