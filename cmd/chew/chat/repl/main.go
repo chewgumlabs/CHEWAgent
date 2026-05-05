@@ -153,8 +153,7 @@ func main() {
 				if newBrain != nil {
 					stopBrain() // drop any prior brain (shouldn't happen but safe)
 					brain.Store(newBrain)
-					name, gum := projectContext(&proj)
-					p.SetFallback(brainFallback(newBrain, name, gum))
+					p.SetFallback(brainFallback(newBrain, proj.Load()))
 				}
 			case "wake_brain":
 				handleWakeBrain(p, &brain, &proj)
@@ -209,24 +208,15 @@ func handleWakeBrain(p *planner.ScriptedPlanner, brain *atomic.Pointer[wizard.Br
 		return
 	}
 	brain.Store(newBrain)
-	// Pass the active project's GUM to the brain so free-form questions
-	// land in the right context.
-	name, gum := projectContext(proj)
-	p.SetFallback(brainFallback(newBrain, name, gum))
+	// Pass the active project (if any) to the brain so free-form
+	// questions land in the right context with stage-aware instructions.
+	p.SetFallback(brainFallback(newBrain, proj.Load()))
 	fmt.Println()
 	fmt.Println(p.PickVoice("brain_awake"))
 }
 
-// projectContext returns the active project's name + GUM raw body.
-// Both empty if no project is active. The two values are spread into
-// brainFallback's (projectName, projectGUM) parameters.
-func projectContext(proj *atomic.Pointer[project.Project]) (string, string) {
-	pj := proj.Load()
-	if pj == nil {
-		return "", ""
-	}
-	return pj.Name, pj.GUM.Raw
-}
+// (projectContext was deleted — brainFallback now takes a *project.Project
+// directly, and gum.Detect/Instructions handles stage-aware prompting.)
 
 // handleNapBrain stops the running brain and restores the brainless
 // fallback. Idempotent.
@@ -284,8 +274,7 @@ func handleOpenProject(p *planner.ScriptedPlanner, proj *atomic.Pointer[project.
 	// the new project's GUM in context. (No model reload — just a fresh
 	// chat session with the updated prompt.)
 	if b := brain.Load(); b != nil {
-		name, gum := projectContext(proj)
-		p.SetFallback(brainFallback(b, name, gum))
+		p.SetFallback(brainFallback(b, pj))
 	}
 
 	fmt.Println()
@@ -332,7 +321,7 @@ func handleForgetProject(p *planner.ScriptedPlanner, proj *atomic.Pointer[projec
 	proj.Store(nil)
 	_ = project.ClearLast(brainDir)
 	if b := brain.Load(); b != nil {
-		p.SetFallback(brainFallback(b, "", ""))
+		p.SetFallback(brainFallback(b, nil))
 	}
 	fmt.Println()
 	fmt.Println(p.PickVoice("project_forgotten"))

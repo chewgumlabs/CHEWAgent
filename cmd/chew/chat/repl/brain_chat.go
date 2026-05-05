@@ -19,7 +19,9 @@ import (
 	"strings"
 	"time"
 
+	"github.com/chewgumlabs/CHEWAgent/cmd/chew/chat/gum"
 	"github.com/chewgumlabs/CHEWAgent/cmd/chew/chat/planner"
+	"github.com/chewgumlabs/CHEWAgent/cmd/chew/chat/project"
 	"github.com/chewgumlabs/CHEWAgent/cmd/chew/chat/wizard"
 )
 
@@ -45,82 +47,31 @@ THE COMMANDS YOU CAN SUGGEST (the user types these themselves):
 Suggest by name when they fit ("type 'fetch <url>'", "type 'web search foo'") —
 don't pretend you ran them.`
 
-// noProjectGuidance is appended when the user hasn't set up a folder
-// yet. The rule is general: if they want to build anything that lives
-// in files, get a folder first. Whatever the thing is, whatever the
-// stack is, whatever they're calling it.
-const noProjectGuidance = `
-
---- where we are ---
-The user has NOT set up a project folder yet.
-
-Rule: if they want to build, make, create, or start something that lives
-in files — anything where code would be written or work would be saved —
-DO NOT start writing code yet. The first step is always: get a folder.
-
-Read their intent generously. Don't get stuck on exact wording, typos,
-or whether they used "build" vs "make" vs "set up." If they're describing
-something they want to put together, that counts.
-
-Tell them, in your voice:
-
-  "Hmph. <the thing> needs a folder for our work. Drop a folder onto this
-  window, or type 'make folder <name>' to spin one up in your Documents.
-  I'll walk you through it once we have one."
-
-Then wait. When a folder is set up, you'll see "current project context"
-appear in this prompt — that's your cue to proceed.
-
-Pure conversation (explain X, what's Y, brainstorm) — just answer normally.
-The folder rule only fires when they want to BUILD something.
---- end ---`
-
-// inProjectGuidance is appended when a project IS active. The pattern is
-// general — same shape whether they're making a website, a Python script,
-// a Rust binary, a tracker for collectible toys, anything.
-const inProjectGuidance = `
-
-WORKING IN THIS PROJECT — the pattern (applies to anything they're building):
-
-  1. Understand what they want next. Ask one clarifying question if needed.
-  2. Suggest ONE concrete first thing — usually one file. The right
-     starting file depends on what they're making (e.g., a website's
-     entry point, a script's main file, a binary's main source). If you
-     don't know the stack, ask.
-  3. Write it (suggest 'write <file>') or paste the content for them.
-  4. Check in: "Open it. What do you see?"
-  5. WAIT for their answer before suggesting the next step.
-
-Don't dump the whole roadmap. Don't list 10 next steps. One thing, then
-their reply, then the next thing.
-
-When a real decision lands (stack picked, structure agreed, feature
-scoped), suggest the user note it in GUM.md so we remember it next session.`
-
-// buildSystemPrompt composes the system message sent to the brain. If a
-// project is active and its GUM.md is non-empty, the GUM content is
-// folded in below the character preamble. If no project is active, we
-// instead inject the "push for folder first" guidance.
+// buildSystemPrompt composes the system message sent to the brain. The
+// stage-aware playbook lives in package gum — we just observe the
+// project's shape, ask gum.Detect what stage we're at, and append the
+// matching gum.Instructions.
 //
-// projectName + projectGUM may be empty — chats outside a project still
-// get the directive to push for folder setup.
-func buildSystemPrompt(projectName, projectGUM string) string {
-	if projectName == "" && strings.TrimSpace(projectGUM) == "" {
-		return chewSystemPrompt + noProjectGuidance
-	}
+// pj may be nil — that's how we say "no project active." gum returns
+// StageNoProject in that case.
+func buildSystemPrompt(pj *project.Project) string {
+	stage := gum.Detect(pj)
+
 	var b strings.Builder
 	b.WriteString(chewSystemPrompt)
-	b.WriteString("\n\n--- current project context ---\n")
-	if projectName != "" {
-		fmt.Fprintf(&b, "You're currently working in a project called '%s'.\n", projectName)
+
+	if pj != nil {
+		b.WriteString("\n\n--- current project context ---\n")
+		fmt.Fprintf(&b, "Project: '%s'\n", pj.Name)
+		if strings.TrimSpace(pj.GUM.Raw) != "" {
+			b.WriteString("\nGUM.md (project memory; treat as ground truth):\n\n")
+			b.WriteString(strings.TrimSpace(pj.GUM.Raw))
+			b.WriteString("\n")
+		}
+		b.WriteString("--- end project context ---")
 	}
-	if strings.TrimSpace(projectGUM) != "" {
-		b.WriteString("The user (or you, on a previous session) has captured the project's intent and ground truth in GUM.md. Treat it as the source of truth for what we're working on:\n\n")
-		b.WriteString(strings.TrimSpace(projectGUM))
-		b.WriteString("\n")
-	}
-	b.WriteString("--- end project context ---")
-	b.WriteString(inProjectGuidance)
+
+	b.WriteString(gum.Instructions(stage))
 	return b.String()
 }
 
@@ -137,10 +88,10 @@ type chatSession struct {
 	messages []chatMessage
 }
 
-// newChatSession builds a fresh conversation. projectName + projectGUM
-// are both optional; when non-empty, the project context lands in the
-// system prompt so the brain knows what we're working on.
-func newChatSession(b *wizard.Brain, projectName, projectGUM string) *chatSession {
+// newChatSession builds a fresh conversation. pj may be nil — that's
+// how we say "no project active." When pj is set, its GUM.md and the
+// detected stage's instructions land in the system prompt.
+func newChatSession(b *wizard.Brain, pj *project.Project) *chatSession {
 	return &chatSession{
 		endpoint: b.Endpoint() + "/v1/chat/completions",
 		alias:    "ChewBrain",
@@ -148,7 +99,7 @@ func newChatSession(b *wizard.Brain, projectName, projectGUM string) *chatSessio
 		// we don't want to interrupt it. The user can Ctrl-C if needed.
 		client: &http.Client{Timeout: 0},
 		messages: []chatMessage{
-			{Role: "system", Content: buildSystemPrompt(projectName, projectGUM)},
+			{Role: "system", Content: buildSystemPrompt(pj)},
 		},
 	}
 }
@@ -202,11 +153,11 @@ func (s *chatSession) ask(input string) (string, error) {
 
 // brainFallback returns a planner.SetFallback-compatible function that
 // routes free-form queries through the brain. The session's history
-// persists across calls so the conversation has memory. projectName +
-// projectGUM, if non-empty, get folded into the system prompt so the
-// brain has project context.
-func brainFallback(b *wizard.Brain, projectName, projectGUM string) func(input string) planner.Plan {
-	sess := newChatSession(b, projectName, projectGUM)
+// persists across calls so the conversation has memory. pj, if set,
+// gets folded into the system prompt with stage-aware instructions
+// from package gum.
+func brainFallback(b *wizard.Brain, pj *project.Project) func(input string) planner.Plan {
+	sess := newChatSession(b, pj)
 	return func(input string) planner.Plan {
 		reply, err := sess.ask(input)
 		if err != nil {
