@@ -1,142 +1,135 @@
-# `chew chat` — the conversational shell for Chew
+# `cmd/chew/chat`
 
-Date: 2026-05-04
-Status: design sketch + mascot in place; implementation deferred
+The chat shell, mascot, and supporting packages for CHEWAgent. This is
+the package tour — for install + usage docs see the [top-level
+README](../../../README.md).
 
-## What this is
+## What runs
 
-A casual chat CLI that lets you talk to Chew the way you'd talk to a colleague:
+`chat/repl/` is the binary entrypoint. `go run ./cmd/chew/chat/repl`
+(or `chew` after `./install.sh`) starts the loop:
 
-```
-$ chew chat
-chew> here's https://github.com/foo/bar — can we pull this down and study it?
-[chew picks: specimen-seed → fingerprint → engineering-orient → harvester]
-chew> Started. Decomposition first (~30 min on JH), harvester after.
-> what phase are we at?
-[reads state-ledger + recent verb summaries]
-chew> Engineering atlas, file 12 of 188. ~18 min left for this sub-phase.
-> show me candidate behaviors so far
-[reads harvester-round-up output if present]
-chew> Round-up hasn't started yet — kicks off after decomposition. Want me to ping when it lands?
-> yeah
-chew> 👻
-```
+1. Render the CHEW sprite (you see his face immediately).
+2. Check brain state (installed? napping? not installed?).
+3. Resume the last project from `<repo>/brain/last-project.txt` if any.
+4. Prompt. On each input:
+   - `planner.Plan(input)` — match against the regex vocabulary.
+   - Print the response, dispatch any verbs through `tool.Registry`.
+   - Handle system actions (install brain / wake up / nap / open project / etc.).
+   - Re-render the mascot.
+5. On exit (quit, Ctrl+C, terminal close): stop the brain cleanly.
 
-The pitch: **the chat CLI is a wrapper over the verb registry**. The model planning each turn knows about every Chew verb (the static header carries them) and decides how to translate "here's a repo, can we study it?" into a chain of verb calls. The verbs ARE the skills; the chat is just the casual entry point.
-
-## CHEW the mascot
-
-[`assets/CHEW_NES.png`](assets/CHEW_NES.png) — 8 frames, 16×16 each, authentic NES palette.
-
-Frame mapping (per `assets/CHEW_NES.json`, column-major in the sheet):
-
-| Frames | Animation | Mascot state | System state |
-|---|---|---|---|
-| 0, 1, 2 | Idle (3-frame cycle) | At rest, blinking | Waiting for user input; no verbs in flight |
-| 3, 4, 5 | Walk (3-frame cycle) | Working, moving | A verb is executing; deep-read in progress; harvester pass running |
-| 6, 7 | Ghost (2-frame cycle) | Spectral / dead | Transport error; model unreachable; verb returned with `model_error`; ChewJackHammer down |
-
-The mascot is in the corner of the chat UI. Its animation is **bound to live system state**, not faked:
-- Idle when the most recent verb summary is older than N seconds and no verb is running.
-- Walk when an active verb `request.json` exists with no `summary.json` written yet (verb in flight).
-- Ghost when the most recent verb's `summary.json` has `ok: false` with transport-class error_type, OR a liveness probe of the bound model fails.
-
-This makes the mascot a **live status indicator** — not decoration. If you see ghost-mode CHEW, the model is genuinely unreachable.
-
-## Architecture: stateless reader of disk + verb dispatcher
-
-The chat shell is intentionally **a thin process that holds no state of its own**. All ground truth lives on disk in the existing telemetry artifacts (`request.json` / `summary.json` per verb call, `state-ledger.json` per specimen, harvester outputs in `evals/`).
+## Packages
 
 ```
-                         ┌──────────────────────┐
-                         │   chew chat (TUI)    │
-                         │  ┌──────────┐        │
-                         │  │ 🟡 CHEW  │  idle  │   ← polls disk every 500ms
-                         │  └──────────┘        │   ← reads recent summary.json
-                         │                      │       to choose mascot state
-                         │  > what phase ...?   │
-                         │                      │
-                         │  [chat history]      │
-                         └──────┬───────────────┘
-                                │
-            ┌───────────────────┼───────────────────┐
-            ▼                   ▼                   ▼
-    ChewJackHammer        Verb registry        Disk (artifacts)
-    (planner LLM)         (existing 31 verbs)  truth/runs/...
-                          + new status verbs   evals/...
-                                               workspace/research/...
+encode/    NES CHR-ROM encoder. Aseprite JSON + PNG → bit-plane Go data.
+           Used at build time only (the encoded data is committed in
+           sprite/chr_data.go and sprite/gum_chr.go).
+
+sprite/    NES PPU bit-plane decode + terminal rendering. Decodes the
+           encoded CHR data back to per-pixel grids and renders frames
+           via full-cell ANSI background colors (no glyphs, no half-
+           blocks — the half-block approach showed line-gap stripes
+           through colors so we switched to 2-spaces-per-pixel).
+
+planner/   The "brainless" layer. Regex vocabulary table that converts
+           user input into a Plan{Response, Verbs, LaunchWizard, ...}.
+           voice.go holds every CHEW string — round-robin pools so each
+           command response varies. Edit voice.go to rewrite anything
+           CHEW says.
+
+tool/      Verb implementations. Tool interface + Registry. Standard
+           tools registered by NewDefault(): web_search, web_fetch,
+           read_file, list_dir, search, write_file, run_command. The
+           planner emits verb names; the registry runs them.
+
+wizard/    Multi-step interactive flows. Currently: install_brain
+           (download Bonsai, spawn llama-server, write config). brain.go
+           is the subprocess manager (Start/WaitHealthy/Stop). Includes
+           orphan cleanup via brain.pid + KillStaleBrain. voice.go in
+           this package holds the wizard-specific text.
+
+project/   "A project is a folder." Open(path), Create(path),
+           starter GUM.md template, last-project memory. Silent
+           git init on Create (save points without saying "git").
+
+gum/       The Truth Steward — deterministic stage detection. Detect()
+           observes a project (GUM.md content, source files, commits)
+           and returns one of: NoProject / EmptyProject / IntentKnown
+           / Started / Mature. Each stage has a paragraph of
+           instructions in instructions.go that gets folded into the
+           brain's system prompt, telling it what to do at this stage.
+
+repl/      The chat shell binary. Wires planner + tools + wizards +
+           project + gum together. brain_chat.go: HTTP client for the
+           OpenAI-compat endpoint llama-server exposes; system prompt
+           built from gum.Detect/Instructions + project's GUM.md.
+           main.go: REPL loop, mascot rendering, signal handling.
+
+testbed/   Sprite playground. `go run ./cmd/chew/chat/testbed`. Type
+           0..7 to step through CHEW frames, gum 0..5 for GUM, all to
+           see them all.
+
+assets/    Source art. CHEW_NES.png + CHEW_NES.json (Aseprite export),
+           same for nesGUM. CC-BY-NC.
 ```
 
-The chat REPL never owns work in progress. Long-running tasks (deep-read, full harvester) get **launched as detached processes** and write their telemetry to disk. The chat reads that disk to answer questions and update the mascot. This means:
+## Mascot
 
-- You can spin up `chew chat`, kill it, restart it — the harvester running underneath doesn't notice.
-- Two chat sessions can run side-by-side, both seeing the same true state.
-- The chat doesn't crash when the model is busy — it just shows ghost-CHEW.
+`assets/CHEW_NES.png` — 8 frames, 16×16 each, NES palette. Bound to
+**actual system state**, not faked:
 
-## Three new verbs needed
+| frames | state | when CHEW shows it |
+|---|---|---|
+| 0–2 | idle | waiting for input, no verb in flight |
+| 3–5 | walk | verb running / brain thinking |
+| 6–7 | ghost | error / brain unreachable / no brain installed |
 
-To wire the chat to disk-state, add these verbs to the existing registry:
+`mascotState.set(state)` updates the current animation; `renderMascot()`
+draws one frame inline. The full-cell renderer is two ANSI background-
+colored spaces per source pixel, so a 16×16 sprite is 32×16 character
+cells — readable in any modern terminal, no glyphs needed.
 
-1. **`read_session_status`** — given a session name OR auto-discover the most recent run, return: current phase, last successful verb, count of verbs by status, ETA estimate, any transport errors. Pure read of `truth/runs/<run>/orchestration/...` artifacts.
+## Architecture: chassis vs steward vs brain
 
-2. **`read_specimen_progress`** — given a specimen ID, walk `workspace/research/_<Specimen>/` to report which orientation/decomposition/harvest stages are complete. Reads `state-ledger.json` and the `*_orientation`, `*_surfaces`, `*_harvest` directories.
+CHEW is intentionally three layers, each in its own role:
 
-3. **`liveness_probe`** — given a model alias, hit `/v1/models` on its endpoint and return up/down + latency. Drives ghost-mode detection.
+- **Chassis** (planner + tool registry + REPL): deterministic. Handles
+  every command that has a clear shape — file ops, web verbs, git read-
+  only, project setup, brain lifecycle.
+- **GUM, the steward** (`gum/`): also deterministic. Watches the
+  project's shape and decides which stage we're at. Hands the brain a
+  stage-appropriate playbook on every chat session rebuild.
+- **The brain** (Bonsai via llama-server, when awake): the
+  conversational layer. Free-form questions, brainstorming, explaining
+  code. The system prompt it gets is composed from CHEW's character +
+  the project's GUM.md + the current GUM stage instructions, so it
+  always has situation awareness without having to track state itself.
 
-Each is a deterministic disk/HTTP read with no LLM call, so the mascot polling cost stays trivial.
+Small models (Bonsai is 8B-class compressed to 1.16 GB) are great at
+language and bad at tracking state across turns. GUM does the tracking
+deterministically and tells the brain what matters this turn.
 
-## TUI layout sketch
+## Where to edit
 
-```
-╔════════════════════════════════════════════════════════════════════╗
-║                                                       ┌──────┐     ║
-║  CHEW @ chewgumlabs                                   │ 🟡   │     ║
-║                                                       │ idle │     ║
-║                                                       └──────┘     ║
-║  ──────────────────────────────────────────────────────────────    ║
-║                                                                    ║
-║  > here's https://github.com/foo/bar — can we study it?            ║
-║                                                                    ║
-║  Started. Engineering decomposition first (~30 min on              ║
-║  ChewJackHammer), harvester runs after.                            ║
-║                                                                    ║
-║  [verb chain: specimen-seed → fingerprint → engineering-orient]   ║
-║                                                                    ║
-║  > what phase are we at?                                           ║
-║                                                                    ║
-║  Engineering atlas pass, file 12 of 188 (~18 min remaining)        ║
-║                                                                    ║
-║  ──────────────────────────────────────────────────────────────    ║
-║  > _                                                               ║
-╚════════════════════════════════════════════════════════════════════╝
-```
-
-The mascot animation runs in its own goroutine; chat input/output runs in the main loop. Mascot polls disk on a 500ms tick — cheap.
-
-## Implementation surface (when we build)
-
-- **Go subcommand**: extend `cmd/chew` with a `chat` subcommand. Existing CLI dispatch lives in `cmd/chew/main.go`.
-- **TUI library**: `bubbletea` (charmbracelet) — actively maintained, mature, supports the Elm-style state model that maps cleanly to "render mascot from disk-state every tick."
-- **Sprite rendering in terminal**: three options to evaluate at build time:
-  1. **Unicode half-blocks** (▀▄): renders 16×16 sprite as 16×8 character cells. Works in any terminal. Lossy on color count but NES palette is small.
-  2. **Sixel** (broad terminal support, Apple Terminal etc.): per-pixel color, true 16×16 rendering.
-  3. **Kitty graphics protocol** (kitty + a few others): best fidelity, narrowest support.
-  - Pick by what most users actually run. Half-blocks is the safest default.
-- **Aseprite JSON parser**: trivial — the `assets/CHEW_NES.json` already has frame coordinates, animation state mapping is hand-defined here.
-- **Planner**: `ChewJackHammer` running with the existing static header + a tiny "casual conversation" addendum. Same model that runs the verbs is the model that picks them — no separate brain.
-
-## What this DOESN'T do
-
-- **No mid-thought interruption**: you can't pause an in-flight verb to redirect it. Verbs run to completion (or transport-error). The chat lets you queue, observe, and ask, but not preempt. This is by design — interrupting a partially-emitted blueprint is more dangerous than just letting it land and starting fresh.
-- **No persistent agent process holding RAM state**: everything is on disk. The chat shell can die at any time without losing work.
-- **No web UI for v0**: terminal first. The mascot already maps to a web sprite-sheet shape (`assets/CHEW_NES.png` is exactly the layout a web canvas animation would consume), so a future `chew web` would render the same asset.
-
-## Status
-
-- ✅ Design + mascot assets landed (this file + `assets/`)
-- ⏳ Implementation deferred until: (a) the harvester pipeline validates end-to-end on a specimen (in-flight today), (b) we have a few more verbs on the registry that benefit from casual invocation
-- ⏳ The 3 status verbs (`read_session_status`, `read_specimen_progress`, `liveness_probe`) — easy adds; can ship before the chat REPL itself
+- **CHEW's voice (responses, fallbacks, project messages)** —
+  [`planner/voice.go`](planner/voice.go). Round-robin pools, raw
+  string literals, heavily commented. Edit freely.
+- **Wizard text (install brain plan/details/done)** —
+  [`wizard/voice.go`](wizard/voice.go). Same shape.
+- **Brain system prompt + stage playbooks** —
+  [`repl/brain_chat.go`](repl/brain_chat.go) (character + commands)
+  and [`gum/instructions.go`](gum/instructions.go) (per-stage rules).
+- **The character** — [`planner/voice.go`](planner/voice.go) opens with
+  a "Who CHEW is" comment block that captures the cantankerous-frog
+  tone in a few lines. Read that before rewriting voice strings so the
+  rhythm stays consistent.
 
 ## Why CHEW looks like CHEW
 
-He's authentically NES-palette. 4 colors, 16×16, no anti-aliasing, no gradients. He blinks when waiting, walks when thinking, ghosts when the line goes dead. The aesthetic isn't decoration — it's a tonal commitment that this is software that respects its own constraints (small, local, finite, knowable). Same ethos that puts the agent on local models instead of remote APIs.
+He's authentically NES-palette. 4 colors, 16×16, no anti-aliasing, no
+gradients. He blinks when waiting, walks when thinking, ghosts when the
+line goes dead. The aesthetic isn't decoration — it's a tonal commitment
+that this is software that respects its own constraints (small, local,
+finite, knowable). Same ethos that puts the agent on a local model
+instead of a cloud API.

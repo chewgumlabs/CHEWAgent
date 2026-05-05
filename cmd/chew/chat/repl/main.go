@@ -215,8 +215,6 @@ func handleWakeBrain(p *planner.ScriptedPlanner, brain *atomic.Pointer[wizard.Br
 	fmt.Println(p.PickVoice("brain_awake"))
 }
 
-// (projectContext was deleted — brainFallback now takes a *project.Project
-// directly, and gum.Detect/Instructions handles stage-aware prompting.)
 
 // handleNapBrain stops the running brain and restores the brainless
 // fallback. Idempotent.

@@ -1,10 +1,11 @@
 // Package planner converts user input into a verb plan + response text.
-// Two implementations:
-//   - ScriptedPlanner: regex/pattern table, no LLM, brainless mode
-//   - LLMPlanner: queries the model (deferred — implemented when model present)
 //
-// Both return the same Plan shape. The chat shell never knows which planner
-// is active; it just calls Plan(input) and gets back a response.
+// ScriptedPlanner is a regex vocabulary table — deterministic, no LLM.
+// Free-form input that no rule matches goes through a fallback function.
+// By default the fallback says "I don't know that one — try 'install
+// brain'". Once a brain is awake the chat shell calls SetFallback to
+// route free-form input through the LLM (see repl/brain_chat.go's
+// brainFallback).
 //
 // All user-visible strings live in voice.go. This file is the engine —
 // the regex table and the round-robin counter — and shouldn't need to
