@@ -46,9 +46,10 @@ tool/      Verb implementations. Tool interface + Registry. Standard
 
 wizard/    Multi-step interactive flows. Currently: install_brain
            (download Bonsai, spawn llama-server, write config). brain.go
-           is the subprocess manager (Start/WaitHealthy/Stop). Includes
-           orphan cleanup via brain.pid + KillStaleBrain. voice.go in
-           this package holds the wizard-specific text.
+           is the subprocess/endpoint manager (Start/Attach/WaitHealthy/
+           Stop). profile.go owns the hidden model profile contract.
+           Includes orphan cleanup via brain.pid + KillStaleBrain.
+           voice.go in this package holds the wizard-specific text.
 
 project/   "A project is a folder." Open(path), Create(path),
            starter GUM.md template, last-project memory. Silent
@@ -121,6 +122,16 @@ CHEW is intentionally three layers, each in its own role:
 Small models (Bonsai is 8B-class compressed to 1.16 GB) are great at
 language and bad at tracking state across turns. GUM does the tracking
 deterministically and tells the brain what matters this turn.
+
+Public CHEWAgent keeps Bonsai as the automatic default: normal users see
+`install brain`, `wake up`, and `nap`, not a model chooser. The hidden
+`wizard.ProfileConfig` contract (`<repo>/brain/config.json`,
+`chew-profile-config.v0`) lets internal/private builds point CHEW at a
+different llama-server or OpenAI-compatible endpoint without changing the
+chat shell. Profile-switching verbs exist for development, but are not
+advertised in the top-level README, first-run text, or help output. Once
+the v0 profile schema is written, older pre-profile CHEWAgent builds will
+not understand that config file.
 
 ## Where to edit
 

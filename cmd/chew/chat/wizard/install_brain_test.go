@@ -138,12 +138,63 @@ func TestInstallBrain_FullHappyPath(t *testing.T) {
 	if !strings.Contains(string(body), "ChewBrain") {
 		t.Errorf("config should mention ChewBrain alias, got: %s", body)
 	}
+	if !strings.Contains(string(body), ProfileConfigSchema) {
+		t.Errorf("config should use profile schema, got: %s", body)
+	}
 	if !strings.Contains(string(body), w.modelPath) {
 		t.Errorf("config should embed model path %q, got: %s", w.modelPath, body)
 	}
 	// Verify the wizard captured the running brain so the REPL can pick it up.
 	if w.RunningBrain() == nil {
 		t.Errorf("RunningBrain() should be set after happy path")
+	}
+}
+
+func TestInstallBrain_ReinstallPreservesAdditionalProfiles(t *testing.T) {
+	w := newTestWizard(t)
+	cfg := DefaultProfileConfig(w.chewHome)
+	cfg.ActiveProfile = "qwen"
+	cfg.Profiles = append(cfg.Profiles, BrainProfile{
+		Name:       "qwen",
+		Provider:   ProviderOpenAICompatible,
+		Source:     "chew.internal",
+		BaseURL:    "http://127.0.0.1:9911",
+		ModelAlias: "qwen3.5",
+	})
+	if err := SaveProfileConfig(w.chewHome, cfg); err != nil {
+		t.Fatal(err)
+	}
+
+	reply, _ := collect()
+	w.Begin(reply)
+	done, err := w.Step("yes", reply)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !done {
+		t.Fatal("install should complete")
+	}
+
+	reloaded, err := LoadProfileConfig(w.chewHome)
+	if err != nil {
+		t.Fatal(err)
+	}
+	active, err := reloaded.Active()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if active.Name != "qwen" {
+		t.Fatalf("reinstall should preserve active qwen profile, got %q", active.Name)
+	}
+	if _, ok := reloaded.Profile("qwen"); !ok {
+		t.Fatal("reinstall should preserve qwen profile")
+	}
+	bonsai, ok := reloaded.Profile(DefaultProfileName)
+	if !ok {
+		t.Fatal("reinstall should preserve/create bonsai profile")
+	}
+	if bonsai.ModelPath != w.modelPath {
+		t.Fatalf("bonsai model path = %q, want %q", bonsai.ModelPath, w.modelPath)
 	}
 }
 
@@ -157,13 +208,13 @@ func TestInstallBrain_HidesPathsInUserText(t *testing.T) {
 	_, _ = w.Step("yes", reply)
 	all := strings.Join(*captured, "\n")
 	forbidden := []string{
-		w.modelPath,                  // /tmp/.../Bonsai-8B-Q1_0.gguf
-		w.chewHome,                   // /tmp/.../.chew
-		installBrainModelURL,         // huggingface URL
-		installBrainModelFile,        // Bonsai-8B-Q1_0.gguf
-		"llama-server",               // tool name
-		"https://",                   // any URL leak
-		"huggingface",                // upstream brand
+		w.modelPath,           // /tmp/.../Bonsai-8B-Q1_0.gguf
+		w.chewHome,            // /tmp/.../.chew
+		installBrainModelURL,  // huggingface URL
+		installBrainModelFile, // Bonsai-8B-Q1_0.gguf
+		"llama-server",        // tool name
+		"https://",            // any URL leak
+		"huggingface",         // upstream brand
 	}
 	for _, bad := range forbidden {
 		if strings.Contains(all, bad) {

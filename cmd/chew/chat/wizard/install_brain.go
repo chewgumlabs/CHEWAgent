@@ -190,62 +190,123 @@ func (w *InstallBrain) RunningBrain() *Brain {
 	return w.brain
 }
 
-// BrainState reports whether a brain is installed at the canonical location.
+// BrainState reports whether the active brain profile is ready to wake.
 type BrainState int
 
 const (
-	BrainNotInstalled BrainState = iota // no GGUF on disk
-	BrainNapping                        // GGUF on disk, but no process running
+	BrainNotInstalled BrainState = iota // active profile is missing local model or endpoint config
+	BrainNapping                        // active profile is ready, but no process/connection is active
 )
 
-// CheckBrain returns the install state without loading the model. Cheap
-// (just a stat) — used by the REPL on startup so the chat shell appears
-// instantly. The user types 'wake up' to actually load Bonsai into RAM.
+// BrainDir returns the canonical directory for model/profile state.
+func BrainDir() (string, error) {
+	root, err := repoAnchor()
+	if err != nil {
+		return "", err
+	}
+	return filepath.Join(root, "brain"), nil
+}
+
+// CheckBrain returns the active profile state without loading the model.
+// Cheap (stat/config only) — used by the REPL on startup so the chat shell
+// appears instantly. The user types 'wake up' to actually load/connect it.
 //
 // brainDir is returned alongside so the caller can pass it to WakeBrain
 // or KillStaleBrain.
 func CheckBrain() (BrainState, string) {
-	root, err := repoAnchor()
+	brainDir, err := BrainDir()
 	if err != nil {
 		return BrainNotInstalled, ""
 	}
-	brainDir := filepath.Join(root, "brain")
-	modelPath := filepath.Join(brainDir, installBrainModelFile)
+	return CheckBrainAt(brainDir), brainDir
+}
 
+// CheckBrainAt is the testable/path-explicit form of CheckBrain.
+func CheckBrainAt(brainDir string) BrainState {
+	cfg, err := LoadProfileConfig(brainDir)
+	if err != nil {
+		return BrainNotInstalled
+	}
+	prof, err := cfg.Active()
+	if err != nil {
+		return BrainNotInstalled
+	}
+	switch prof.Provider {
+	case ProviderOpenAICompatible:
+		if prof.BaseURL != "" {
+			return BrainNapping
+		}
+		return BrainNotInstalled
+	case ProviderLlamaServer:
+		if localModelReady(prof.ModelPath) {
+			return BrainNapping
+		}
+		return BrainNotInstalled
+	default:
+		return BrainNotInstalled
+	}
+}
+
+func localModelReady(modelPath string) bool {
 	info, err := os.Stat(modelPath)
 	if err != nil || info.IsDir() {
-		return BrainNotInstalled, brainDir
+		return false
 	}
 	// Guard against a half-finished download. Bonsai is ~1.16 GB; under
 	// 100 MB is incomplete.
 	if info.Size() < 100*1024*1024 {
-		return BrainNotInstalled, brainDir
+		return false
 	}
-	return BrainNapping, brainDir
+	return true
 }
 
-// WakeBrain spawns llama-server with the installed Bonsai model and waits
-// for /health. Returns the running *Brain on success.
+// WakeBrain activates the selected profile. Managed llama-server profiles
+// spawn a local subprocess and wait for /health. OpenAI-compatible profiles
+// attach to an already-running endpoint.
 //
 // Caller must Stop() the brain on exit (or via the REPL's `nap` verb).
-// Does NOT check whether a brain is already running — that's the caller's
+// Does NOT check whether a brain is already active — that's the caller's
 // responsibility.
 func WakeBrain() (*Brain, error) {
-	state, brainDir := CheckBrain()
-	if state != BrainNapping {
+	brainDir, err := BrainDir()
+	if err != nil {
+		return nil, err
+	}
+	cfg, err := LoadProfileConfig(brainDir)
+	if err != nil {
+		return nil, err
+	}
+	prof, err := cfg.Active()
+	if err != nil {
+		return nil, err
+	}
+
+	switch prof.Provider {
+	case ProviderOpenAICompatible:
+		if prof.BaseURL == "" {
+			return nil, errors.New("active brain profile is missing an endpoint")
+		}
+		return AttachBrain(prof.BaseURL, prof.ModelAlias), nil
+	case ProviderLlamaServer:
+		return wakeLocalBrain(brainDir, prof)
+	default:
+		return nil, fmt.Errorf("unsupported brain provider %q", prof.Provider)
+	}
+}
+
+func wakeLocalBrain(brainDir string, prof BrainProfile) (*Brain, error) {
+	if !localModelReady(prof.ModelPath) {
 		return nil, errors.New("no brain installed; run 'install brain' first")
 	}
-	modelPath := filepath.Join(brainDir, installBrainModelFile)
-
 	binary, err := acquireLlamaServer(brainDir, nil)
 	if err != nil {
 		return nil, fmt.Errorf("runtime: %w", err)
 	}
 	brain, err := StartBrain(BrainConfig{
 		BinaryPath: binary,
-		ModelPath:  modelPath,
-		Alias:      "ChewBrain",
-		Port:       8080,
+		ModelPath:  prof.ModelPath,
+		Alias:      prof.ModelAlias,
+		Port:       prof.Port,
 		LogPath:    filepath.Join(brainDir, "brain.log"),
 	})
 	if err != nil {
@@ -296,8 +357,7 @@ func (w *InstallBrain) runAll(reply func(string)) (bool, error) {
 
 	// [3/3] wake brain (also writes config so subsequent CHEW runs
 	// know where to look).
-	configPath := filepath.Join(w.chewHome, "config.json")
-	if err := w.writeConfig(configPath); err != nil {
+	if err := w.writeConfig(); err != nil {
 		reply(fmt.Sprintf(brainStartFailedText, "couldn't save settings"))
 		w.step = stepAborted
 		return true, err
@@ -332,18 +392,38 @@ func (w *InstallBrain) runAll(reply func(string)) (bool, error) {
 	return true, nil
 }
 
-// writeConfig writes ~/.chew/config.json with the model path baked in.
-// Read by the REPL on startup (in a future change) to know where the
-// brain lives without re-running the wizard.
-func (w *InstallBrain) writeConfig(configPath string) error {
-	body := strings.Join([]string{
-		"{",
-		`  "model_endpoint": "http://127.0.0.1:8080/v1/chat/completions",`,
-		`  "model_alias": "ChewBrain",`,
-		fmt.Sprintf(`  "model_path": %q`, w.modelPath),
-		"}",
-	}, "\n") + "\n"
-	return os.WriteFile(configPath, []byte(body), 0o644)
+// writeConfig writes the default Bonsai profile with the model path baked
+// in. Public CHEWAgent users never choose a model here; the profile
+// contract exists so internal builds can swap the inhabitant underneath.
+func (w *InstallBrain) writeConfig() error {
+	cfg, err := LoadProfileConfig(w.chewHome)
+	if err != nil {
+		return err
+	}
+	bonsai := DefaultBonsaiProfile(w.chewHome)
+	bonsai.ModelPath = w.modelPath
+	bonsai.BaseURL = defaultBrainBaseURL
+	bonsai.ModelAlias = "ChewBrain"
+	bonsai.Port = 8080
+
+	replaced := false
+	for i := range cfg.Profiles {
+		if strings.EqualFold(strings.TrimSpace(cfg.Profiles[i].Name), bonsai.Name) {
+			cfg.Profiles[i] = bonsai
+			replaced = true
+			break
+		}
+	}
+	if !replaced {
+		cfg.Profiles = append([]BrainProfile{bonsai}, cfg.Profiles...)
+	}
+	if strings.TrimSpace(cfg.ActiveProfile) == "" {
+		cfg.ActiveProfile = bonsai.Name
+	}
+	if _, ok := cfg.Profile(cfg.ActiveProfile); !ok {
+		cfg.ActiveProfile = bonsai.Name
+	}
+	return SaveProfileConfig(w.chewHome, cfg)
 }
 
 // ----- defaults (override in tests) -----
@@ -472,4 +552,3 @@ func summariseSpawnErr(err error) string {
 		return "something went wrong starting up"
 	}
 }
-

@@ -334,6 +334,13 @@ func (a *tuiApp) runSystemAction(plan planner.Plan) {
 		}
 	case "nap_brain":
 		handleNapBrainWithReply(a.p, &a.brain, a.reply)
+	case "profile_status":
+		handleProfileStatusWithReply(a.p, a.brainDir, a.reply)
+	case "profile_list":
+		handleProfileListWithReply(a.p, a.brainDir, a.reply)
+	case "profile_use":
+		handleProfileUseWithReply(a.p, &a.brain, a.brainDir, plan.LaunchArgs["name"], a.reply)
+		a.brainInstalled = wizard.CheckBrainAt(a.brainDir) == wizard.BrainNapping
 	case "open_project":
 		a.blipGum()
 		a.render()

@@ -332,6 +332,28 @@ func TestScripted_NapBrainTriggers(t *testing.T) {
 	}
 }
 
+func TestScripted_ProfileCommandsAreHiddenButWired(t *testing.T) {
+	p := NewScriptedPlanner()
+
+	status := p.Plan("profile status")
+	if status.LaunchWizard != "profile_status" {
+		t.Fatalf("profile status should launch profile_status, got %q", status.LaunchWizard)
+	}
+	list := p.Plan("profile list")
+	if list.LaunchWizard != "profile_list" {
+		t.Fatalf("profile list should launch profile_list, got %q", list.LaunchWizard)
+	}
+	use := p.Plan("profile use qwen")
+	if use.LaunchWizard != "profile_use" || use.LaunchArgs["name"] != "qwen" {
+		t.Fatalf("profile use should launch profile_use with qwen, got %+v", use)
+	}
+
+	help := p.Plan("help")
+	if strings.Contains(strings.ToLower(help.Response), "profile") {
+		t.Fatalf("profile switching should not be advertised in public help, got:\n%s", help.Response)
+	}
+}
+
 func TestScripted_RememberNoteTriggersWizard(t *testing.T) {
 	p := NewScriptedPlanner()
 	got := p.Plan("remember use Go for the prototype")

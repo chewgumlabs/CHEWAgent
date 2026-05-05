@@ -162,6 +162,12 @@ func runPlainREPL() {
 				handleWakeBrain(p, &brain, &proj)
 			case "nap_brain":
 				handleNapBrain(p, &brain)
+			case "profile_status":
+				handleProfileStatus(p, brainDir)
+			case "profile_list":
+				handleProfileList(p, brainDir)
+			case "profile_use":
+				handleProfileUse(p, &brain, brainDir, plan.LaunchArgs["name"])
 			case "open_project":
 				handleOpenProject(p, tools, &proj, &brain, brainDir, plan.LaunchArgs["path"])
 			case "create_project":
@@ -234,6 +240,71 @@ func handleNapBrainWithReply(p *planner.ScriptedPlanner, brain *atomic.Pointer[w
 	_ = b.Stop()
 	p.SetFallback(nil) // restore default brainless fallback
 	reply(p.PickVoice("brain_napping"))
+}
+
+func handleProfileStatus(p *planner.ScriptedPlanner, brainDir string) {
+	handleProfileStatusWithReply(p, brainDir, printReply)
+}
+
+func handleProfileStatusWithReply(p *planner.ScriptedPlanner, brainDir string, reply func(string)) {
+	brainDir, err := resolveBrainDir(brainDir)
+	if err != nil {
+		reply(fmt.Sprintf(p.PickVoice("project_failed"), "couldn't locate brain settings"))
+		return
+	}
+	cfg, err := wizard.LoadProfileConfig(brainDir)
+	if err != nil {
+		reply(fmt.Sprintf(p.PickVoice("project_failed"), err.Error()))
+		return
+	}
+	reply(wizard.FormatProfileStatus(cfg))
+}
+
+func handleProfileList(p *planner.ScriptedPlanner, brainDir string) {
+	handleProfileListWithReply(p, brainDir, printReply)
+}
+
+func handleProfileListWithReply(p *planner.ScriptedPlanner, brainDir string, reply func(string)) {
+	brainDir, err := resolveBrainDir(brainDir)
+	if err != nil {
+		reply(fmt.Sprintf(p.PickVoice("project_failed"), "couldn't locate brain settings"))
+		return
+	}
+	cfg, err := wizard.LoadProfileConfig(brainDir)
+	if err != nil {
+		reply(fmt.Sprintf(p.PickVoice("project_failed"), err.Error()))
+		return
+	}
+	reply(wizard.FormatProfileList(cfg))
+}
+
+func handleProfileUse(p *planner.ScriptedPlanner, brain *atomic.Pointer[wizard.Brain], brainDir, name string) {
+	handleProfileUseWithReply(p, brain, brainDir, name, printReply)
+}
+
+func handleProfileUseWithReply(p *planner.ScriptedPlanner, brain *atomic.Pointer[wizard.Brain], brainDir, name string, reply func(string)) {
+	if brain.Load() != nil {
+		reply("Brain is awake. Type 'nap' before switching profiles.")
+		return
+	}
+	brainDir, err := resolveBrainDir(brainDir)
+	if err != nil {
+		reply(fmt.Sprintf(p.PickVoice("project_failed"), "couldn't locate brain settings"))
+		return
+	}
+	_, prof, err := wizard.SetActiveProfile(brainDir, name)
+	if err != nil {
+		reply(fmt.Sprintf(p.PickVoice("project_failed"), err.Error()))
+		return
+	}
+	reply(fmt.Sprintf("Active brain profile: %s\nUse 'wake up' to load or connect it.", prof.Name))
+}
+
+func resolveBrainDir(brainDir string) (string, error) {
+	if strings.TrimSpace(brainDir) != "" {
+		return brainDir, nil
+	}
+	return wizard.BrainDir()
 }
 
 // handleOpenProject sets up shop in the given folder. The folder must
@@ -409,6 +480,10 @@ func summariseSpawnErr(err error) string {
 	switch {
 	case strings.Contains(s, "no brain installed"):
 		return "no brain installed yet"
+	case strings.Contains(s, "missing an endpoint"):
+		return "brain settings need fixing"
+	case strings.Contains(s, "unsupported brain provider"):
+		return "brain settings need fixing"
 	case strings.Contains(s, "address already in use"):
 		return "port 8080 is busy"
 	case strings.Contains(s, "permission denied"):

@@ -174,6 +174,23 @@ func registerCoreVocabulary(p *ScriptedPlanner) {
 		return Plan{LaunchWizard: "nap_brain", Mascot: "idle"}
 	})
 
+	// brain profile — hidden development hooks for internal/private builds.
+	// Public CHEWAgent keeps Bonsai as the automatic default; these are
+	// intentionally absent from normal help/first-run docs.
+	p.Add(`(?i)^(profile|profile status|show profile|brain profile|brain profile status)$`, func(_ []string) Plan {
+		return Plan{LaunchWizard: "profile_status", Mascot: "idle"}
+	})
+	p.Add(`(?i)^(profiles|profile list|list profiles|brain profiles|brain profile list)$`, func(_ []string) Plan {
+		return Plan{LaunchWizard: "profile_list", Mascot: "idle"}
+	})
+	p.Add(`(?i)^(?:profile use|use profile|brain profile use)\s+(.+)$`, func(m []string) Plan {
+		return Plan{
+			LaunchWizard: "profile_use",
+			LaunchArgs:   map[string]string{"name": strings.TrimSpace(m[1])},
+			Mascot:       "idle",
+		}
+	})
+
 	// here <path> — explicitly set the project folder.
 	p.Add(`(?i)^here\s+(.+)$`, func(m []string) Plan {
 		return Plan{

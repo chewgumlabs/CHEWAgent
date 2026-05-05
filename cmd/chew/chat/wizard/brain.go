@@ -71,6 +71,7 @@ func processAlive(pid int) bool {
 type Brain struct {
 	cmd      *exec.Cmd
 	endpoint string // e.g. "http://127.0.0.1:8080"
+	alias    string // model name to send to the OpenAI-compatible API
 	logPath  string
 	metaPath string // <brainDir>/brain.pid.json; written on Start, removed on Stop
 	stopOnce bool
@@ -139,13 +140,35 @@ func StartBrain(cfg BrainConfig) (*Brain, error) {
 	return &Brain{
 		cmd:      cmd,
 		endpoint: fmt.Sprintf("http://127.0.0.1:%d", cfg.Port),
+		alias:    cfg.Alias,
 		logPath:  cfg.LogPath,
 		metaPath: metaPath,
 	}, nil
 }
 
+// AttachBrain returns a handle for an already-running OpenAI-compatible
+// endpoint. CHEW does not own the process, so Stop is a no-op.
+func AttachBrain(baseURL, alias string) *Brain {
+	baseURL = baseURLFromChatEndpoint(baseURL)
+	if alias == "" {
+		alias = "ChewBrain"
+	}
+	return &Brain{
+		endpoint: baseURL,
+		alias:    alias,
+	}
+}
+
 // Endpoint returns the http://host:port the brain is serving on.
 func (b *Brain) Endpoint() string { return b.endpoint }
+
+// Alias returns the model name sent in chat requests.
+func (b *Brain) Alias() string {
+	if b == nil || b.alias == "" {
+		return "ChewBrain"
+	}
+	return b.alias
+}
 
 // LogPath returns the file the brain writes its logs to (may be empty).
 func (b *Brain) LogPath() string { return b.logPath }

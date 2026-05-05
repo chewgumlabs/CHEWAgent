@@ -95,7 +95,7 @@ type chatSession struct {
 func newChatSession(b *wizard.Brain, pj *project.Project) *chatSession {
 	return &chatSession{
 		endpoint: b.Endpoint() + "/v1/chat/completions",
-		alias:    "ChewBrain",
+		alias:    b.Alias(),
 		// No timeout — the brain may take a minute on a CPU-only laptop and
 		// we don't want to interrupt it. The user can Ctrl-C if needed.
 		client: &http.Client{Timeout: 0},
