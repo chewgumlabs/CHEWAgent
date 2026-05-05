@@ -1,0 +1,68 @@
+# release.yml — build chew for every platform on tag push, attach the
+# binaries to a GitHub Release.
+#
+# Triggers when you push a tag matching v* (e.g., v0.1, v0.2.0). Push
+# tags with:
+#
+#     git tag v0.1 -m "first release"
+#     git push origin v0.1
+#
+# Five binaries get cross-compiled (using build-binaries.sh) and uploaded
+# to the release page at:
+#
+#     https://github.com/chewgumlabs/CHEWAgent/releases
+#
+# install.sh on user machines hits the "/latest/download/" URLs to pull
+# whichever binary fits their platform.
+
+name: release
+
+on:
+  push:
+    tags:
+      - 'v*'
+
+jobs:
+  build-and-release:
+    runs-on: ubuntu-latest
+    permissions:
+      # Needed by softprops/action-gh-release to create the Release entry
+      # and upload assets via the GITHUB_TOKEN.
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-go@v5
+        with:
+          # Match go.mod. Bump in lockstep when we upgrade.
+          go-version: '1.26'
+          cache: true
+
+      - name: Build all platform binaries
+        run: ./build-binaries.sh
+
+      - name: Stage release assets
+        # GitHub Releases shows assets by filename, so give each one a
+        # platform-suffixed name. install.sh constructs URLs from this
+        # exact pattern: chew-<GOOS>-<GOARCH>[.exe]
+        run: |
+          mkdir -p release-assets
+          cp bin/darwin-arm64/chew      release-assets/chew-darwin-arm64
+          cp bin/darwin-amd64/chew      release-assets/chew-darwin-amd64
+          cp bin/linux-amd64/chew       release-assets/chew-linux-amd64
+          cp bin/linux-arm64/chew       release-assets/chew-linux-arm64
+          cp bin/windows-amd64/chew.exe release-assets/chew-windows-amd64.exe
+          echo "--- staged ---"
+          ls -lh release-assets/
+
+      - name: Create release
+        uses: softprops/action-gh-release@v2
+        with:
+          files: release-assets/*
+          # Auto-fills the release notes from commits since the previous
+          # tag. First release pulls from the initial commit, which is
+          # noisy but a one-time thing.
+          generate_release_notes: true
+          # If we re-push a tag, replace the existing release rather
+          # than fail loudly.
+          fail_on_unmatched_files: true

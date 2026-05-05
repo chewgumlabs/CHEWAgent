@@ -1,15 +1,18 @@
 #!/usr/bin/env bash
 # install.sh — make `chew` a system command.
 #
-# Walled garden: a pre-built binary for your platform ships with the
-# repo (under bin/<GOOS>-<GOARCH>/chew). install.sh just symlinks it
-# into a directory on your PATH. No build step, no Go required.
+# Walled garden: a pre-built binary lands at <a writable PATH dir>/chew.
+# It's a real file (not a symlink), so it survives the repo being
+# moved or deleted.
 #
-# How updates work: a `git pull` brings a fresh binary; the symlink
-# follows it automatically. No need to re-run install.sh.
-#
-# How total uninstall works: delete this folder, plus the one symlink
-# install.sh dropped. Both shown in the closing message.
+# Where the binary comes from (in order of preference):
+#   1. The latest GitHub Release — primary path. Tiny download, no Go
+#      required, no rebuild on `git pull`.
+#   2. The bundled binary at bin/<platform>/chew in this repo —
+#      fallback for offline installs and the period before we cut
+#      our first release.
+#   3. Local `go build` — last-resort fallback for platforms we
+#      don't ship binaries for.
 #
 # Total uninstall: rm -rf <this folder> && rm <SHOWN_AT_END> && rm ~/.chew-home
 
@@ -43,29 +46,13 @@ case "$(uname -m)" in
     *) red "Unsupported arch: $(uname -m)"; exit 1 ;;
 esac
 PLATFORM="${GOOS}-${GOARCH}"
+ASSET="chew-${PLATFORM}"
+if [ "$GOOS" = "windows" ]; then
+    ASSET="${ASSET}.exe"
+fi
 echo "    platform: $PLATFORM"
 
-# 2. Find the bundled binary for this platform.
-BINARY="$REPO/bin/$PLATFORM/chew"
-if [ "$GOOS" = "windows" ]; then
-    BINARY="${BINARY}.exe"
-fi
-
-if [ ! -x "$BINARY" ]; then
-    yellow "    No pre-built binary for $PLATFORM at $BINARY."
-    yellow "    Falling back to local build (requires Go)..."
-    if ! command -v go >/dev/null 2>&1; then
-        red "    Go isn't installed. Install from https://go.dev/dl/"
-        red "    OR file an issue so we can ship a binary for $PLATFORM."
-        exit 1
-    fi
-    ( cd "$REPO" && go build -trimpath -ldflags="-s -w" -o "$BINARY" ./cmd/chew/chat/repl )
-    green "    built locally: $BINARY"
-else
-    green "    bundled binary: $BINARY"
-fi
-
-# 3. Pick an install location on PATH that doesn't need sudo.
+# 2. Pick an install location on PATH that doesn't need sudo.
 candidates=()
 if [ -n "${PREFIX:-}" ]; then
     candidates+=("$PREFIX")
@@ -76,7 +63,6 @@ candidates+=(
     "/usr/local/bin"
     "/opt/homebrew/bin"
 )
-
 INSTALL_DIR=""
 for d in "${candidates[@]}"; do
     if [ -d "$d" ] && [ -w "$d" ]; then
@@ -84,27 +70,60 @@ for d in "${candidates[@]}"; do
         break
     fi
 done
-
-# If nothing writable existed, create ~/.local/bin and use that.
 if [ -z "$INSTALL_DIR" ]; then
     INSTALL_DIR="$HOME/.local/bin"
     mkdir -p "$INSTALL_DIR"
 fi
-
-# 4. Symlink. `git pull` updates the binary in-place; the symlink follows.
 TARGET="$INSTALL_DIR/chew"
-if [ -e "$TARGET" ] || [ -L "$TARGET" ]; then
-    rm -f "$TARGET"
-fi
-ln -s "$BINARY" "$TARGET"
-green "    linked: $TARGET → $BINARY"
 
-# 5. Record the repo path so the binary can find its bundled assets
+# 3. Acquire the binary. Try GitHub Release → bundled in repo → go build.
+RELEASE_URL="https://github.com/chewgumlabs/CHEWAgent/releases/latest/download/${ASSET}"
+BUNDLED="$REPO/bin/$PLATFORM/chew"
+if [ "$GOOS" = "windows" ]; then BUNDLED="${BUNDLED}.exe"; fi
+
+acquired=""
+
+# 3a. Try the latest release.
+if command -v curl >/dev/null 2>&1; then
+    echo "    trying latest GitHub Release: $ASSET"
+    if curl -fL --retry 2 -sS -o "${TARGET}.tmp" "$RELEASE_URL"; then
+        mv "${TARGET}.tmp" "$TARGET"
+        chmod +x "$TARGET"
+        acquired="release"
+        green "    ✓ downloaded from GitHub Release"
+    else
+        rm -f "${TARGET}.tmp"
+        yellow "    couldn't reach GitHub Releases (no network or no release yet)"
+    fi
+fi
+
+# 3b. Fall back to bundled binary in the repo.
+if [ -z "$acquired" ] && [ -x "$BUNDLED" ]; then
+    cp "$BUNDLED" "$TARGET"
+    chmod +x "$TARGET"
+    acquired="bundled"
+    green "    ✓ copied bundled binary from $BUNDLED"
+fi
+
+# 3c. Last resort: build locally.
+if [ -z "$acquired" ]; then
+    if ! command -v go >/dev/null 2>&1; then
+        red "No release reachable, no bundled binary, and Go isn't installed."
+        red "Install Go from https://go.dev/dl/ and re-run, or check your network."
+        exit 1
+    fi
+    echo "    building locally..."
+    ( cd "$REPO" && go build -trimpath -ldflags="-s -w" -o "$TARGET" ./cmd/chew/chat/repl )
+    acquired="local-build"
+    green "    ✓ built and installed locally"
+fi
+
+# 4. Record the repo path so chew can find its bundled assets
 #    (llama-server, etc.) when invoked from anywhere.
 echo "$REPO" > "$HOME/.chew-home"
 green "    saved repo path to ~/.chew-home"
 
-# 6. Check whether INSTALL_DIR is on PATH; warn (don't auto-modify) if not.
+# 5. PATH check.
 case ":$PATH:" in
     *":$INSTALL_DIR:"*)
         green "    $INSTALL_DIR is already on your PATH"
@@ -123,5 +142,6 @@ echo
 green "✓ Done."
 echo "  Open any terminal, type:  chew"
 echo
+echo "  Source: $acquired"
 echo "  To uninstall: rm -rf $REPO && rm $TARGET && rm ~/.chew-home"
 echo
