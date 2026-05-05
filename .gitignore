@@ -25,6 +25,9 @@
 # CHEW runtime files (don't ship into the repo)
 .chew/
 brain.log
+# The brain itself — Bonsai GGUF + per-user logs/config — lives in <repo>/brain/.
+# Users download it via the install wizard. Never commit.
+/brain/
 
 # Local development overrides
 *.local.json

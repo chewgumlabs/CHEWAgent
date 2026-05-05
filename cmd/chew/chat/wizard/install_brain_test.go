@@ -17,14 +17,17 @@ func collect() (func(string), *[]string) {
 }
 
 // newTestWizard builds a wizard with every side-effecting hook stubbed
-// so tests don't touch the network, spawn processes, or read PATH.
+// so tests don't touch the network, spawn processes, or read PATH. The
+// brain dir is rooted at a tmpdir, mirroring production layout where the
+// brain lives in <repo>/brain/.
 func newTestWizard(t *testing.T) *InstallBrain {
 	t.Helper()
 	tmp := t.TempDir()
+	brainDir := filepath.Join(tmp, "brain")
 	w := NewInstallBrain()
-	w.chewHome = filepath.Join(tmp, ".chew")
-	w.modelDir = filepath.Join(w.chewHome, "models")
-	w.modelPath = filepath.Join(w.modelDir, installBrainModelFile)
+	w.chewHome = brainDir
+	w.modelDir = brainDir
+	w.modelPath = filepath.Join(brainDir, installBrainModelFile)
 
 	// Pretend the runtime is bundled.
 	w.findRuntimeFn = func() (string, error) { return "/fake/llama-server", nil }

@@ -68,15 +68,20 @@ const (
 
 // NewInstallBrain creates a fresh wizard. The chat REPL calls Begin to
 // start; subsequent user inputs go to Step until done=true.
+//
+// Brain storage location is `<repo>/brain/` — the directory that contains
+// the running CHEW binary, or the current working directory if we're
+// invoked via `go run` (which puts the temp binary in TMPDIR). The goal is
+// "delete the CHEWAgent folder to fully uninstall" — a hidden ~/.chew
+// dotfile dir would defeat that for non-tech users.
 func NewInstallBrain() *InstallBrain {
-	home, _ := os.UserHomeDir()
-	chewHome := filepath.Join(home, ".chew")
-	modelDir := filepath.Join(chewHome, "models")
+	root, _ := repoAnchor()
+	brainDir := filepath.Join(root, "brain")
 	return &InstallBrain{
 		step:           stepShowPlan,
-		chewHome:       chewHome,
-		modelDir:       modelDir,
-		modelPath:      filepath.Join(modelDir, installBrainModelFile),
+		chewHome:       brainDir,
+		modelDir:       brainDir,
+		modelPath:      filepath.Join(brainDir, installBrainModelFile),
 		platform:       runtime.GOOS + "-" + runtime.GOARCH,
 		findRuntimeFn:  findLlamaServer,
 		downloadFn:     defaultDownload,
@@ -84,6 +89,33 @@ func NewInstallBrain() *InstallBrain {
 		waitHealthyFn:  defaultWaitHealthy,
 		healthDeadline: 60 * time.Second,
 	}
+}
+
+// repoAnchor picks the directory the brain folder hangs off of. Prefers
+// the binary's own directory (so a packaged CHEW puts brain/ next to
+// itself); falls back to cwd when running under `go run`.
+func repoAnchor() (string, error) {
+	if exe, err := os.Executable(); err == nil {
+		dir := filepath.Dir(exe)
+		if !isTempDir(dir) {
+			return dir, nil
+		}
+	}
+	return os.Getwd()
+}
+
+// isTempDir flags directories the OS puts `go run` temp binaries into,
+// so we don't anchor brain storage at a path that vanishes mid-session.
+func isTempDir(p string) bool {
+	if tmp := os.TempDir(); tmp != "" && strings.HasPrefix(p, tmp) {
+		return true
+	}
+	for _, pre := range []string{"/var/folders/", "/private/var/folders/", "/tmp/"} {
+		if strings.HasPrefix(p, pre) {
+			return true
+		}
+	}
+	return false
 }
 
 // Begin shows the plan; user's next input drives the state machine.

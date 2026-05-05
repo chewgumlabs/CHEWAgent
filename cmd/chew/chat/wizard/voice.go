@@ -80,7 +80,10 @@ var brainWakingText = `[3/3] Waking the brain...`
 // brainAwakeText — shown when /health returns 200. No slots.
 var brainAwakeText = `[3/3] Brain online. *croak* I'm thinking now.
 
-You can go back to chatting; ask me anything.`
+You can go back to chatting; ask me anything.
+
+P.S. I live inside this folder now — brain and all. Delete the folder
+anytime to be rid of me. Drains the swamp completely.`
 
 // brainStartFailedText — when llama-server fails to launch. Slot %s is the
 // user-friendly summary (NOT a path or stack trace).

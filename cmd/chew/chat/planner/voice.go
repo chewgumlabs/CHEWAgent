@@ -172,13 +172,6 @@ var responsePools = map[string][]string{
 		`What this frog handles, no brain required:`,
 	},
 
-	// install_intro — opener line on the install-brain page. Body is in
-	// installBody. Slots: none.
-	"install_intro": {
-		`Install-brain plan. Hmph.`,
-		`Brain transplant time. Here's how:`,
-		`Putting a brain in this frog. The plan:`,
-	},
 }
 
 // ─── Pages ───────────────────────────────────────────────────────────────
@@ -208,16 +201,5 @@ var helpBody = `  read <file>           print file contents
 For free-form questions ('explain X', 'what's wrong with Y'),
 I need a brain. Type 'install brain' to install one locally.`
 
-// installBody — the static plan shown when the user types `install brain`.
-var installBody = `To put a brain in this frog, I need a local LLM. We'll use Bonsai —
-an 8B-class model packed into 1.16 GB. Apache 2.0 licensed, runs in
-llama.cpp, lives entirely on your machine. No accounts, no telemetry.
-
-The plan when you say 'yes':
-  [1/3] Check that llama-server is installed (brew install llama.cpp on Mac).
-  [2/3] Download Bonsai (1.16 GB) into ~/.chew/models/.
-  [3/3] Write a config so I know where to find it.
-
-Total disk: about 1.2 GB. No GPU required — Bonsai runs on plain CPU.
-
-Reply 'yes' to start, 'tell me more' for the why, or 'cancel' to skip.`
+// (the install-brain page used to live here; the wizard now owns all
+// user-facing text for that flow — see cmd/chew/chat/wizard/voice.go)

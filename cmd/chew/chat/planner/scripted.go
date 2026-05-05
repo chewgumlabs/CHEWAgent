@@ -21,10 +21,14 @@ import (
 // Plan is the result of planning. The chat shell renders Response and
 // (optionally) executes Verbs.
 type Plan struct {
-	Response string // text to print to the user
-	Verbs    []Verb // verbs to dispatch (may be empty for pure-talk responses)
-	Halt     bool   // signal the chat shell to exit (e.g., on "quit")
-	Mascot   string // mascot state hint: "idle" | "walk" | "ghost"
+	Response     string // text to print to the user
+	Verbs        []Verb // verbs to dispatch (may be empty for pure-talk responses)
+	Halt         bool   // signal the chat shell to exit (e.g., on "quit")
+	Mascot       string // mascot state hint: "idle" | "walk" | "ghost"
+	LaunchWizard string // if non-empty, the chat shell hands off to a wizard
+	//                     by this name (e.g. "install_brain"). Response and
+	//                     Verbs are still rendered first; the wizard runs
+	//                     after.
 }
 
 // Verb is a generic verb invocation: name + JSON-shaped params.
@@ -139,15 +143,12 @@ func registerCoreVocabulary(p *ScriptedPlanner) {
 		return Plan{Response: p.helpText(), Mascot: "idle"}
 	})
 
-	// install brain — page text. (Wizard handoff lives in REPL, pending wire-up.)
+	// install brain — signal the chat shell to hand off to the wizard. The
+	// wizard owns all the user-facing text from here on (download progress,
+	// done message, etc). The planner returns no Response so the user goes
+	// straight into the wizard's flow.
 	p.Add(`(?i)^install brain$`, func(_ []string) Plan {
-		return Plan{Response: p.installBrainText(), Mascot: "idle"}
-	})
-	p.Add(`(?i)^(install brain[: ]+)?(yes|y|go|begin|start)$`, func(_ []string) Plan {
-		return Plan{
-			Response: "Install-brain wizard not wired in here yet. Coming soon — for now, see install-brain instructions in the docs or run llama-server manually.",
-			Mascot:   "idle",
-		}
+		return Plan{LaunchWizard: "install_brain", Mascot: "idle"}
 	})
 
 	// web — fetch a URL. MUST come before the generic `read <file>` rule
@@ -280,7 +281,15 @@ func (p *ScriptedPlanner) helpText() string {
 	return p.pick("help_intro") + "\n\n" + helpBody
 }
 
-// installBrainText composes the cycled intro line with the static body from voice.go.
-func (p *ScriptedPlanner) installBrainText() string {
-	return p.pick("install_intro") + "\n\n" + installBody
+// SetFallback swaps the function used when no rule matches. Pass nil to
+// restore the default (brainless-mode) fallback. The chat shell uses this
+// to point the fallback at a brain-backed LLM after `install brain`
+// completes — so free-form questions stop hitting the "I don't know that
+// one" message and start hitting the actual model.
+func (p *ScriptedPlanner) SetFallback(fn func(input string) Plan) {
+	if fn == nil {
+		p.fallback = p.makeFallback()
+		return
+	}
+	p.fallback = fn
 }

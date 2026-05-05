@@ -134,11 +134,38 @@ func TestScripted_StatusReportsBrainless(t *testing.T) {
 	}
 }
 
-func TestScripted_InstallBrainStartsWizard(t *testing.T) {
+func TestScripted_InstallBrainSignalsWizardHandoff(t *testing.T) {
 	p := NewScriptedPlanner()
 	got := p.Plan("install brain")
-	if !strings.Contains(got.Response, "llama.cpp") {
-		t.Errorf("install brain should mention llama.cpp, got: %s", got.Response)
+	if got.LaunchWizard != "install_brain" {
+		t.Errorf("install brain should set LaunchWizard=install_brain, got %q", got.LaunchWizard)
+	}
+	// The wizard owns all the user-facing text now, so the planner shouldn't
+	// pre-render anything that'd duplicate the wizard's plan screen.
+	if got.Response != "" {
+		t.Errorf("planner should not return its own text for install brain, got: %s", got.Response)
+	}
+}
+
+func TestScripted_SetFallbackSwapsAndRestores(t *testing.T) {
+	p := NewScriptedPlanner()
+	called := false
+	p.SetFallback(func(input string) Plan {
+		called = true
+		return Plan{Response: "from custom fallback: " + input}
+	})
+	got := p.Plan("explain monads")
+	if !called {
+		t.Errorf("custom fallback was not invoked")
+	}
+	if !strings.Contains(got.Response, "from custom fallback") {
+		t.Errorf("expected custom fallback response, got: %s", got.Response)
+	}
+	// nil restores the default brainless fallback.
+	p.SetFallback(nil)
+	got = p.Plan("explain monads")
+	if !strings.Contains(got.Response, "install brain") {
+		t.Errorf("default fallback should mention install brain, got: %s", got.Response)
 	}
 }
 

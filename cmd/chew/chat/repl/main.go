@@ -1,21 +1,16 @@
 // chew chat REPL — public-facing chat shell.
 //
-// Stdlib-only. Reads stdin, plans via ScriptedPlanner (when no LLM
-// configured) or LLMPlanner (when one is reachable — TODO), renders
-// CHEW the mascot in the corner, dispatches verbs.
+// Stdlib-only at the application layer. Reads stdin, plans via
+// ScriptedPlanner (deterministic regex vocabulary), dispatches verbs
+// through the tool registry, and renders CHEW the mascot inline.
 //
-// State:
-//   - Plan(input) returns Plan{Response, Verbs, Halt, Mascot}
-//   - REPL prints Response, dispatches Verbs (if any), updates mascot tick
-//   - Mascot animation goroutine ticks frame index based on current state
-//
-// This v0 shell does NOT yet wire in the verb registry — verbs in a Plan
-// are listed but not executed. The next iteration adds verb dispatch.
+// After `install brain` succeeds, the REPL takes ownership of the
+// running brain (a llama-server subprocess) and swaps the planner's
+// fallback function so free-form questions hit the brain. The brain
+// dies with the REPL on exit.
 //
 // Run with:
 //   go run ./cmd/chew/chat/repl
-//
-// Zero deps. Pure stdlib.
 
 package main
 
@@ -28,14 +23,8 @@ import (
 	"time"
 
 	"github.com/chewgumlabs/CHEWAgent/cmd/chew/chat/planner"
-	chewsprite "github.com/chewgumlabs/CHEWAgent/cmd/chew/chat/sprite"
 	"github.com/chewgumlabs/CHEWAgent/cmd/chew/chat/tool"
-)
-
-const (
-	mascotIdleInterval  = 600 * time.Millisecond
-	mascotWalkInterval  = 200 * time.Millisecond
-	mascotGhostInterval = 400 * time.Millisecond
+	"github.com/chewgumlabs/CHEWAgent/cmd/chew/chat/wizard"
 )
 
 func main() {
@@ -44,8 +33,19 @@ func main() {
 	p := planner.NewScriptedPlanner()
 	tools := tool.NewDefault() // web_search + web_fetch wired today; more verbs as we add them
 	state := newMascotState("idle")
-
 	scanner := bufio.NewScanner(os.Stdin)
+	// Bigger buffer than the default 64 KB so users can paste long inputs.
+	scanner.Buffer(make([]byte, 0, 1024), 1024*1024)
+
+	// brain is held here so we can Stop it on exit. Set after a successful
+	// install_brain wizard run.
+	var brain *wizard.Brain
+	defer func() {
+		if brain != nil {
+			_ = brain.Stop()
+		}
+	}()
+
 	for {
 		fmt.Print("\n> ")
 		if !scanner.Scan() {
@@ -58,7 +58,6 @@ func main() {
 
 		plan := p.Plan(input)
 
-		// Update mascot state hint from the plan
 		if plan.Mascot != "" {
 			state.set(plan.Mascot)
 		}
@@ -98,7 +97,29 @@ func main() {
 			return
 		}
 
-		// Settle back to idle a moment after a walk action
+		// Wizard handoff. The planner emits LaunchWizard when the user
+		// asks for a flow that's a state machine rather than a single
+		// turn (e.g., 'install brain').
+		if plan.LaunchWizard != "" {
+			switch plan.LaunchWizard {
+			case "install_brain":
+				newBrain := runInstallBrainWizard(scanner)
+				if newBrain != nil {
+					if brain != nil {
+						_ = brain.Stop() // shouldn't happen but safe
+					}
+					brain = newBrain
+					// Swap the planner's fallback so free-form questions
+					// reach the brain instead of the "I don't know that
+					// one" message.
+					p.SetFallback(brainFallback(brain))
+				}
+			default:
+				fmt.Printf("\n(unknown wizard requested: %s)\n", plan.LaunchWizard)
+			}
+		}
+
+		// Settle back to idle a moment after a walk action.
 		if state.current == "walk" {
 			go func() {
 				time.Sleep(800 * time.Millisecond)
@@ -108,66 +129,42 @@ func main() {
 	}
 }
 
-// mascotState is shared between the REPL and the (future) mascot animator
-// goroutine. For v0 we render once per turn synchronously; future passes
-// will tick a goroutine.
-type mascotState struct {
-	current   string // "idle" | "walk" | "ghost"
-	frameIdx  int
-	lastTick  time.Time
-}
+// runInstallBrainWizard runs the brain-install state machine inline, reading
+// user input from the supplied scanner so it shares stdin with the REPL.
+// Returns the running *Brain on success, nil on cancel/failure.
+func runInstallBrainWizard(scanner *bufio.Scanner) *wizard.Brain {
+	w := wizard.NewInstallBrain()
 
-func newMascotState(initial string) *mascotState {
-	return &mascotState{current: initial, lastTick: time.Now()}
-}
-
-func (s *mascotState) set(state string) {
-	if state == s.current {
-		return
+	reply := func(s string) {
+		fmt.Println()
+		fmt.Println(s)
 	}
-	s.current = state
-	s.frameIdx = 0
-	s.lastTick = time.Now()
-}
 
-// nextFrameIdx returns the frame index to render given the current animation
-// state and a tick. Synchronous version for v0.
-func (s *mascotState) nextFrameIdx() int {
-	switch s.current {
-	case "walk":
-		// frames 3, 4, 5
-		return 3 + (s.frameIdx % 3)
-	case "ghost":
-		// frames 6, 7
-		return 6 + (s.frameIdx % 2)
-	default:
-		// idle: frames 0, 1, 2
-		return 0 + (s.frameIdx % 3)
+	w.Begin(reply)
+
+	for {
+		fmt.Print("\n> ")
+		if !scanner.Scan() {
+			return nil
+		}
+		input := strings.TrimSpace(scanner.Text())
+		if input == "" {
+			continue
+		}
+		done, _ := w.Step(input, reply)
+		// w already emitted any user-facing error message via reply.
+		if done {
+			break
+		}
 	}
-}
-
-// advance ticks the frame index forward. Called once per render in v0.
-func (s *mascotState) advance() {
-	s.frameIdx++
-	s.lastTick = time.Now()
-}
-
-// renderMascot prints the current frame inline. Future iterations will
-// position him in a corner via ANSI cursor save/restore.
-func renderMascot(s *mascotState) {
-	fmt.Println()
-	idx := s.nextFrameIdx()
-	transparentBg := [3]uint8{30, 30, 30}
-	out := chewsprite.RenderFullCellByIndex(idx, chewsprite.RenderOptions{TransparentBg: &transparentBg})
-	fmt.Print(out)
-	s.advance()
+	return w.RunningBrain()
 }
 
 func printIntro() {
 	fmt.Println("┌──────────────────────────────────────────────────────┐")
 	fmt.Println("│ CHEW chat — brainless mode                           │")
-	fmt.Println("│ I can do basics (read/edit/find/run/git read-only).  │")
-	fmt.Println("│ Type 'help' for commands or 'install brain' to       │")
-	fmt.Println("│ upgrade me.                                          │")
+	fmt.Println("│ I do file ops, search, web search, fetch URLs, git   │")
+	fmt.Println("│ read-only. Type 'help' for the menu, 'install brain' │")
+	fmt.Println("│ to put a brain in me.                                │")
 	fmt.Println("└──────────────────────────────────────────────────────┘")
 }
