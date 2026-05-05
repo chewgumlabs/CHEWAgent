@@ -21,13 +21,15 @@ package main
 
 import (
 	"bufio"
+	"errors"
 	"fmt"
 	"os"
 	"strings"
 	"time"
 
-	chewsprite "github.com/chewgumlabs/CHEWAgent/cmd/chew/chat/sprite"
 	"github.com/chewgumlabs/CHEWAgent/cmd/chew/chat/planner"
+	chewsprite "github.com/chewgumlabs/CHEWAgent/cmd/chew/chat/sprite"
+	"github.com/chewgumlabs/CHEWAgent/cmd/chew/chat/tool"
 )
 
 const (
@@ -40,6 +42,7 @@ func main() {
 	printIntro()
 
 	p := planner.NewScriptedPlanner()
+	tools := tool.NewDefault() // web_search + web_fetch wired today; more verbs as we add them
 	state := newMascotState("idle")
 
 	scanner := bufio.NewScanner(os.Stdin)
@@ -69,12 +72,25 @@ func main() {
 			fmt.Println(plan.Response)
 		}
 
-		// List the verbs that WOULD execute (verb registry wire-up is TODO)
-		if len(plan.Verbs) > 0 {
-			fmt.Println()
-			fmt.Println("(verbs that would execute — registry wire-up pending:)")
-			for _, v := range plan.Verbs {
-				fmt.Printf("  - %s %v\n", v.Name, v.Params)
+		// Dispatch verbs through the tool registry. Tools that aren't
+		// registered yet (read_file, run_command, etc.) fall through to
+		// ErrUnknownTool and we list them as "planned but not wired."
+		for _, v := range plan.Verbs {
+			res, err := tools.Dispatch(v.Name, v.Params)
+			switch {
+			case errors.Is(err, tool.ErrUnknownTool):
+				fmt.Printf("\n(verb planned but not wired: %s %v)\n", v.Name, v.Params)
+			case err != nil:
+				fmt.Printf("\n(error running %s: %v)\n", v.Name, err)
+				state.set("ghost")
+			default:
+				if res.Output != "" {
+					fmt.Println()
+					fmt.Println(res.Output)
+				}
+				if res.Mascot != "" {
+					state.set(res.Mascot)
+				}
 			}
 		}
 

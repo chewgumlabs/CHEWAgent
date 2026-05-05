@@ -82,6 +82,26 @@ var responsePools = map[string][]string{
 		`%s. Hmph. Doing it.`,
 	},
 
+	// web_search — search the open web (DuckDuckGo).
+	// Slots: %q = the query (engine adds the quotes).
+	"web_search": {
+		`Searching the web for %q. *croak*`,
+		`Hunting %q online. Hmph.`,
+		`Looking up %q on the web.`,
+		`%q? I'll check the web.`,
+		`Sweep of the web for %q.`,
+	},
+
+	// web_fetch — pull a single URL.
+	// Slots: %s = the URL.
+	"web_fetch": {
+		`Fetching %s. *croak*`,
+		`Opening %s. Strange place but okay.`,
+		`Pulling up %s.`,
+		`%s, was it? Reading.`,
+		`Off to %s. Hmph.`,
+	},
+
 	// git_read — read-only git operation.
 	// Slots: %s = sub-command (e.g. "status", "diff -- foo.go").
 	"git_read": {
@@ -172,10 +192,13 @@ var responsePools = map[string][]string{
 var helpBody = `  read <file>           print file contents
   ls [<dir>]            list directory contents
   write <file>          create a new file
-  find <pattern>        search for a pattern in files
+  find <pattern>        search files for a pattern
   run <command>         run a shell command
   git status|diff|log   read-only git operations
   pwd                   show current directory
+  web search <query>    search the open web
+  google <query>        same as 'web search'
+  fetch <url>           pull a page from the web
   status                check brain status
   install brain         upgrade me to use an LLM
   list                  show all command patterns

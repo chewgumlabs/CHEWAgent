@@ -150,6 +150,28 @@ func registerCoreVocabulary(p *ScriptedPlanner) {
 		}
 	})
 
+	// web — fetch a URL. MUST come before the generic `read <file>` rule
+	// because URLs would otherwise route to read_file with a confusing path.
+	p.Add(`(?i)^(fetch|open|visit|read)\s+(https?://\S+)$`, func(m []string) Plan {
+		url := m[2]
+		return Plan{
+			Verbs:    []Verb{{Name: "web_fetch", Params: map[string]any{"url": url}}},
+			Response: fmt.Sprintf(p.pick("web_fetch"), url),
+			Mascot:   "walk",
+		}
+	})
+
+	// web — search the open web. Triggers always include "web" or "google"
+	// so this never collides with the local `find|grep|search` rule below.
+	p.Add(`(?i)^(?:web\s+search|websearch|google|search\s+(?:the\s+)?web(?:\s+for)?)\s+(.+)$`, func(m []string) Plan {
+		query := strings.TrimSpace(m[1])
+		return Plan{
+			Verbs:    []Verb{{Name: "web_search", Params: map[string]any{"query": query}}},
+			Response: fmt.Sprintf(p.pick("web_search"), query),
+			Mascot:   "walk",
+		}
+	})
+
 	// file ops — read
 	p.Add(`(?i)^(read|cat|show)\s+(.+)$`, func(m []string) Plan {
 		return Plan{
