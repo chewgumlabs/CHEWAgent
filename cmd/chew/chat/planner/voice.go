@@ -224,19 +224,9 @@ var responsePools = map[string][]string{
 		`*splash* Brain stuck: %s`,
 	},
 
-	// project_pitch — shown when the user expresses project-y intent.
-	// Slot %s = the thing they said they wanted to build (e.g. "a website").
-	"project_pitch": {
-		`Hmph. %s sounds like a project. We need a folder to keep our work in — somewhere everything we do can live together.
-
-Drop a folder onto this window, or type 'here <path>' if you have one in mind. 'make folder <name>' to spin up a fresh one in your Documents.`,
-		`%s? Sounds like a project to me. Projects need a folder.
-
-Drag a folder into this window so I know where to set up shop, or type 'make folder <name>' and I'll create one in your Documents.`,
-		`*croak* %s — that's a project. We'll want a folder for it: a place where notes, files, and history all live together.
-
-Drop a folder here (or 'here <path>' / 'make folder <name>'). Once I know where home is, we can get started.`,
-	},
+	// (project_pitch removed — was a regex-based "you sound like you want
+	// to build a website" detector. That kind of intent recognition is
+	// the brain's job, set up by noProjectGuidance in the system prompt.)
 
 	// project_opened — shown when a project folder is set up. Slots:
 	// %s = project name, %s = "found GUM.md" or "fresh GUM.md" status.

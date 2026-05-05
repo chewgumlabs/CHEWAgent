@@ -196,16 +196,12 @@ func registerCoreVocabulary(p *ScriptedPlanner) {
 		return Plan{LaunchWizard: "forget_project", Mascot: "idle"}
 	})
 
-	// "I'd like to build / let's make / help me make X" — project intent.
-	// Doesn't dispatch anything; just nudges the user to set up a folder.
-	p.Add(`(?i)^(i('?d| would)? like to|i want to|let'?s|let me|help me|i'?m (going to|gonna|trying to))\s+(build|make|create|design|develop|setup|set up|start)\s+(.+)$`,
-		func(m []string) Plan {
-			thing := strings.TrimSpace(m[5])
-			return Plan{
-				Response: fmt.Sprintf(p.pick("project_pitch"), thing),
-				Mascot:   "idle",
-			}
-		})
+	// (No regex-based "you sound like you want to build a website" intent
+	// detection. That kind of natural-language understanding is the
+	// brain's job, not a hardcoded keyword list. Without the brain, free-
+	// form intent falls through to the standard fallback ("install brain"
+	// suggestion). With the brain, the system prompt tells it to push
+	// for a folder before any building.)
 
 	// Bare path (drag-into-terminal often pastes a path). Treat as
 	// "open as project folder." Must come BEFORE the read/cat/show rule
