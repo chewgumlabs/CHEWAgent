@@ -36,3 +36,11 @@ The public contract is
 surface small: current job, checkpoint, next safe action, blocked reason, risk,
 and evidence. CHEW should render that as conversation, not raw JSON, unless the
 user is debugging the machinery.
+
+## Behavior Card Contract
+
+Behavior cards give CHEW a portable "what am I working on?" pillar without
+making the label into proof. The public contract is
+[`gum-behavior-card.schema.json`](gum-behavior-card.schema.json). It names the
+behavior, general kind, inputs, outputs, codebase terms, and evidence paths so
+CHEW can explain the work naturally while Gum keeps the trail back to artifacts.

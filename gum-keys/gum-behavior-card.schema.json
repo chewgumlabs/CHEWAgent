@@ -1,0 +1,66 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://chewgumlabs.local/chewagent/gum-keys/gum-behavior-card.schema.json",
+  "title": "Gum Behavior Card",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schema_version", "behavior_name", "general_kind"],
+  "properties": {
+    "schema_version": {
+      "const": "gum-behavior-card.v0"
+    },
+    "behavior_id": {
+      "type": "string"
+    },
+    "behavior_name": {
+      "type": "string",
+      "minLength": 1
+    },
+    "plain_label": {
+      "type": "string"
+    },
+    "technical_label": {
+      "type": "string"
+    },
+    "general_kind": {
+      "type": "string",
+      "minLength": 1,
+      "description": "Portable behavior family, such as input-driven canvas effect, data mapping behavior, audio event transform, timeline editing gesture, or file format codec."
+    },
+    "summary": {
+      "type": "string"
+    },
+    "inputs": {
+      "type": "array",
+      "items": {
+        "type": "string",
+        "minLength": 1
+      },
+      "uniqueItems": true
+    },
+    "outputs": {
+      "type": "array",
+      "items": {
+        "type": "string",
+        "minLength": 1
+      },
+      "uniqueItems": true
+    },
+    "codebase_terms": {
+      "type": "array",
+      "items": {
+        "type": "string",
+        "minLength": 1
+      },
+      "uniqueItems": true
+    },
+    "evidence_paths": {
+      "type": "array",
+      "items": {
+        "type": "string",
+        "minLength": 1
+      },
+      "uniqueItems": true
+    }
+  }
+}
