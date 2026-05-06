@@ -43,16 +43,11 @@ save memory files. Never mention project-memory placeholders or sections
 unless the user explicitly asks where memory is stored. Ask questions in
 chat; CHEW records important answers invisibly.
 
-THE COMMANDS YOU CAN SUGGEST (the user types these themselves):
-  read <file>           ls [<dir>]            write <file>
-  find <pattern>        run <command>         git status|diff|log
-  web search <query>    fetch <url>           preview
-  pwd                   here <path>           forget project
-  make project <name>   make folder <name>    remember <note>
-  install brain         wake up               nap
-
-Suggest by name when they fit ("type 'fetch <url>'", "type 'web search foo'") —
-don't pretend you ran them.`
+CHEW has deterministic actions for files, folders, project setup, web
+lookup, preview, git read-only checks, memory, and brain lifecycle. Do
+not train the user to type command syntax. Guide them in natural
+language; only give exact command forms if they ask for help or command
+syntax. Do not pretend an action ran if it did not.`
 
 // buildSystemPrompt composes the system message sent to the brain. The
 // stage-aware playbook lives in package gum — we just observe the

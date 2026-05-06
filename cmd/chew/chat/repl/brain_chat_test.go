@@ -63,6 +63,7 @@ func TestBuildSystemPromptHidesStarterMemoryBoilerplate(t *testing.T) {
 		"Intent section",
 		"# GUM.md",
 		"Edit it yourself",
+		"make project <name>",
 	} {
 		if strings.Contains(prompt, forbidden) {
 			t.Fatalf("system prompt leaked %q:\n%s", forbidden, prompt)

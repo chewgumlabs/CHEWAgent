@@ -169,6 +169,7 @@ func TestInstructions_DoNotAskUserToEditProjectMemory(t *testing.T) {
 			"fill out",
 			"replace the <one paragraph",
 			"Intent section",
+			"make project <name>",
 		} {
 			if strings.Contains(got, bad) {
 				t.Fatalf("%s instruction leaks memory-management chore %q:\n%s", s, bad, got)

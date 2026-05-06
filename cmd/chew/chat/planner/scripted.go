@@ -139,6 +139,31 @@ func truncate(s string, n int) string {
 	return s[:n-3] + "..."
 }
 
+func projectNameFromBuildIntent(raw string) string {
+	name := strings.TrimSpace(raw)
+	name = strings.Trim(name, `"'`)
+	name = strings.TrimRight(name, ".!?:;")
+	name = strings.TrimSpace(name)
+	if name == "" {
+		return ""
+	}
+	lower := strings.ToLower(name)
+	for _, prefix := range []string{"project ", "folder ", "file "} {
+		if strings.HasPrefix(lower, prefix) {
+			return ""
+		}
+	}
+	switch lower {
+	case "something", "anything", "a thing", "thing", "stuff", "a project", "project":
+		return ""
+	}
+	return name
+}
+
+func projectNamePrompt() string {
+	return "Every project starts with a Folder. It should start with an Idea...\nBut I can handle the Folder. What should I call it?"
+}
+
 func normalizeCommandIntent(s string) string {
 	out := strings.TrimSpace(s)
 	if out == "" || out == "?" {
@@ -243,7 +268,7 @@ func registerCoreVocabulary(p *ScriptedPlanner) {
 		}
 	})
 	p.Add(`(?i)^(make|new)\s+(?:me\s+)?(?:a\s+)?project\s*$`, func(_ []string) Plan {
-		return Plan{Response: fmt.Sprintf(p.pick("project_failed"), "give the project a name: 'make project <name>'"), Mascot: "idle"}
+		return Plan{Response: projectNamePrompt(), Mascot: "idle"}
 	})
 
 	// make folder <name> — create a plain folder only. This does not set
@@ -256,7 +281,35 @@ func registerCoreVocabulary(p *ScriptedPlanner) {
 		}
 	})
 	p.Add(`(?i)^(make|new)\s+(?:me\s+)?(?:a\s+)?folder\s*$`, func(_ []string) Plan {
-		return Plan{Response: fmt.Sprintf(p.pick("project_failed"), "give the folder a name: 'make folder <name>'"), Mascot: "idle"}
+		return Plan{Response: "Hmph. What should I call the folder?", Mascot: "idle"}
+	})
+
+	// Natural project starts — user should be able to say "let's make a
+	// website" without learning the explicit command vocabulary.
+	p.Add(`(?i)^(?:let'?s|lets|i\s+(?:want|wanna|would like)\s+to|we\s+(?:should|need to|want to)|can we|could we)\s+(?:make|build|create|start|set up|put together)\s+(?:a\s+|an\s+|the\s+)?((?:website|site|app|blog|portfolio|game|tool|dashboard|tracker|store|shop)\b.*)$`, func(m []string) Plan {
+		name := projectNameFromBuildIntent(m[1])
+		if name == "" {
+			return Plan{Response: projectNamePrompt(), Mascot: "idle"}
+		}
+		return Plan{
+			LaunchWizard: "create_project",
+			LaunchArgs:   map[string]string{"name": name},
+			Mascot:       "walk",
+		}
+	})
+	p.Add(`(?i)^(?:make|build|create|start|set up|put together)\s+(?:a\s+|an\s+|the\s+)?((?:website|site|app|blog|portfolio|game|tool|dashboard|tracker|store|shop)\b.*)$`, func(m []string) Plan {
+		name := projectNameFromBuildIntent(m[1])
+		if name == "" {
+			return Plan{Response: projectNamePrompt(), Mascot: "idle"}
+		}
+		return Plan{
+			LaunchWizard: "create_project",
+			LaunchArgs:   map[string]string{"name": name},
+			Mascot:       "walk",
+		}
+	})
+	p.Add(`(?i)^(?:let'?s|lets|i\s+(?:want|wanna|would like)\s+to|we\s+(?:should|need to|want to)|can we|could we)\s+(?:make|build|create|start|set up|put together)\s+(?:something|anything|a thing|a project|project)$`, func(_ []string) Plan {
+		return Plan{Response: projectNamePrompt(), Mascot: "idle"}
 	})
 
 	// forget project — clear the active project and last-project memory.

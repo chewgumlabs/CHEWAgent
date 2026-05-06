@@ -182,6 +182,41 @@ func TestScripted_MakeProjectAndFolderAreDistinct(t *testing.T) {
 	}
 }
 
+func TestScripted_NaturalProjectStartCreatesProject(t *testing.T) {
+	p := NewScriptedPlanner()
+	cases := []struct {
+		in   string
+		name string
+	}{
+		{"let's make a website", "website"},
+		{"I want to build a portfolio site", "portfolio site"},
+		{"can we create a dashboard?", "dashboard"},
+		{"build a game!", "game"},
+	}
+	for _, c := range cases {
+		got := p.Plan(c.in)
+		if got.LaunchWizard != "create_project" {
+			t.Fatalf("input %q: expected create_project, got %q / %q", c.in, got.LaunchWizard, got.Response)
+		}
+		if got.LaunchArgs["name"] != c.name {
+			t.Fatalf("input %q: expected name %q, got %q", c.in, c.name, got.LaunchArgs["name"])
+		}
+	}
+}
+
+func TestScripted_ProjectNamePromptDoesNotTeachCommandSyntax(t *testing.T) {
+	p := NewScriptedPlanner()
+	for _, in := range []string{"make project", "let's build something"} {
+		got := p.Plan(in)
+		if strings.Contains(strings.ToLower(got.Response), "make project") {
+			t.Fatalf("input %q should ask conversationally, got: %s", in, got.Response)
+		}
+		if !strings.Contains(strings.ToLower(got.Response), "what should i call") {
+			t.Fatalf("input %q should ask for a name, got: %s", in, got.Response)
+		}
+	}
+}
+
 func TestScripted_SetFallbackSwapsAndRestores(t *testing.T) {
 	p := NewScriptedPlanner()
 	called := false
