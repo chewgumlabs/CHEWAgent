@@ -132,7 +132,7 @@ func (a *tuiApp) startup() {
 	case wizard.BrainNotInstalled:
 		a.appendBlock("No brain installed yet. Type 'install brain' to set one up.")
 	}
-	a.appendBlock(brainlessIntroText())
+	a.appendBlock(chatIntroText())
 
 	if last := project.LoadLast(brainDir); last != "" {
 		if pj, err := project.Open(last); err == nil {

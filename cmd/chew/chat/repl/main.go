@@ -90,7 +90,7 @@ func runPlainREPL() {
 	case wizard.BrainNotInstalled:
 		fmt.Println("\nNo brain installed yet. Type 'install brain' to set one up.")
 	}
-	printBrainlessIntro()
+	printChatIntro()
 
 	// Project state — the active folder CHEW is working out of. Resumed
 	// from <brainDir>/last-project.txt if there is one.
@@ -570,8 +570,8 @@ func runInstallBrainWizard(scanner *bufio.Scanner) *wizard.Brain {
 	return w.RunningBrain()
 }
 
-func printBrainlessIntro() {
-	fmt.Println(brainlessIntroText())
+func printChatIntro() {
+	fmt.Println(chatIntroText())
 }
 
 func printReply(s string) {
@@ -579,13 +579,13 @@ func printReply(s string) {
 	fmt.Println(s)
 }
 
-func brainlessIntroText() string {
+func chatIntroText() string {
 	return strings.Join([]string{
 		"┌──────────────────────────────────────────────────────┐",
 		"│ CHEW chat                                            │",
-		"│ Commands: read, ls, write, find, run, git, web,      │",
-		"│ fetch, preview, remember, install brain, wake up,    │",
-		"│ nap, help, quit.                                     │",
+		"│ Tell me what you want to make or understand.         │",
+		"│ I can handle folders, files, previews, and notes.    │",
+		"│ Type help if you want the mechanical controls.       │",
 		"└──────────────────────────────────────────────────────┘",
 	}, "\n")
 }
