@@ -96,20 +96,28 @@ func (s *workStatus) Answer(pj *project.Project, brainAwake bool) string {
 	switch s.state {
 	case "working":
 		return strings.Join([]string{
-			"I'm working on: " + defaultStatusText(s.task, "the current request"),
+			"Hmph. I'm on it. Gum is holding the checkpoint while the brain works.",
 			"Checkpoint: " + defaultStatusText(s.checkpoint, "working"),
+			"Next: Let the current answer land; I won't interrupt the brain.",
+			"Blocked: no",
 			"Project: " + projectName,
-			"Latest Gum fact: " + defaultStatusText(s.lastFact, "started"),
+			"Trace: task=" + defaultStatusText(s.task, "the current request") + "; fact=" + defaultStatusText(s.lastFact, "started"),
 			"Elapsed: " + statusElapsed(time.Since(s.startedAt)),
-			"That answer came from Gum status, so I didn't interrupt the brain.",
 		}, "\n")
 	case "done", "error":
+		blocked := "no"
+		next := "Tell me the next thing you want to make or inspect."
+		if s.state == "error" {
+			blocked = defaultStatusText(s.lastFact, "last task stopped with an error")
+			next = "Fix the blocker above, or ask me to inspect it."
+		}
 		return strings.Join([]string{
 			"No active long task right now.",
-			"Last checkpoint: " + defaultStatusText(s.checkpoint, s.state),
-			"Last task: " + defaultStatusText(s.task, "none yet"),
-			"Latest Gum fact: " + defaultStatusText(s.lastFact, "nothing recorded yet"),
+			"Checkpoint: " + defaultStatusText(s.checkpoint, s.state),
+			"Next: " + next,
+			"Blocked: " + blocked,
 			"Project: " + projectName,
+			"Trace: last_task=" + defaultStatusText(s.task, "none yet") + "; fact=" + defaultStatusText(s.lastFact, "nothing recorded yet"),
 		}, "\n")
 	default:
 		brain := "napping"
@@ -118,9 +126,11 @@ func (s *workStatus) Answer(pj *project.Project, brainAwake bool) string {
 		}
 		return strings.Join([]string{
 			"No active long task right now.",
-			"Brain: " + brain,
+			"Checkpoint: idle",
+			"Next: Tell me the idea, folder, file, or question you want to work from.",
+			"Blocked: no",
 			"Project: " + projectName,
-			"Latest Gum fact: " + defaultStatusText(s.lastFact, "nothing recorded yet"),
+			"Trace: brain=" + brain + "; fact=" + defaultStatusText(s.lastFact, "nothing recorded yet"),
 		}, "\n")
 	}
 }

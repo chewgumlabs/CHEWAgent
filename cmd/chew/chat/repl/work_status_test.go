@@ -22,10 +22,11 @@ func TestWorkStatusAnswersFromGumFacts(t *testing.T) {
 
 	answer := status.Answer(pj, true)
 	for _, want := range []string{
-		"I'm working on: build a tiny canvas",
+		"Gum is holding the checkpoint",
 		"Checkpoint: Brain call in progress.",
-		"Latest Gum fact: Sent request to Bonsai.",
-		"didn't interrupt the brain",
+		"Next: Let the current answer land",
+		"Blocked: no",
+		"Trace: task=build a tiny canvas; fact=Sent request to Bonsai.",
 	} {
 		if !strings.Contains(answer, want) {
 			t.Fatalf("status answer missing %q:\n%s", want, answer)
