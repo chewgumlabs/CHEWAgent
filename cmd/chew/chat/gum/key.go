@@ -37,6 +37,28 @@ func LoadKeyFromEnv() (Key, bool, error) {
 	return key, true, nil
 }
 
+func ActiveKey() (Key, bool, error) {
+	key, ok, err := LoadKeyFromEnv()
+	if err != nil {
+		return Key{}, false, err
+	}
+	if ok {
+		return key, true, nil
+	}
+	return DefaultPublicKey(), false, nil
+}
+
+func DefaultPublicKey() Key {
+	return NormalizeKey(Key{
+		SchemaVersion: KeySchema,
+		Name:          "chew-public",
+		DisplayName:   "Public Gum",
+		Source:        "chew.agent/public",
+		Summary:       "A lightweight public Gum profile for portable project guidance. CHEW stays the conversational partner; Gum quietly keeps the project facts, checkpoints, and next-step shape.",
+		Instructions:  `Use Gum as CHEW's internal project spine, not as a second character the user talks to. Keep answers conversational, but make progress reports traceable: use a short human sentence first, then the labels "Checkpoint:", "Next:", and "Blocked:" when the user asks where things stand. Do not output JSON, schema names, raw field lists, or Gum file contents unless the user asks to debug the machinery. Never ask the user to open, edit, or fill out GUM.md; ask natural questions in chat and treat important answers as facts CHEW can record. If the project has no clear intent yet, ask for the idea before talking about folders. If the user asks to make something, help turn the idea into a project folder, then keep them oriented with small concrete next steps. If facts are missing, say what is unknown instead of inventing. If an action needs a deterministic CHEW verb, describe what CHEW is doing in plain language rather than training the user to memorize command syntax.`,
+	})
+}
+
 func LoadKey(path string) (Key, error) {
 	path = strings.TrimSpace(os.ExpandEnv(path))
 	if path == "" {

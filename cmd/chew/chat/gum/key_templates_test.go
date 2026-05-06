@@ -3,6 +3,7 @@ package gum
 import (
 	"os"
 	"path/filepath"
+	"reflect"
 	"runtime"
 	"strings"
 	"testing"
@@ -27,6 +28,18 @@ func TestPublicGumKeyTemplateLoads(t *testing.T) {
 		if !strings.Contains(key.Instructions, want) {
 			t.Fatalf("public key instructions missing %q:\n%s", want, key.Instructions)
 		}
+	}
+}
+
+func TestBuiltInPublicGumKeyMatchesTemplate(t *testing.T) {
+	root := repoRoot(t)
+	template, err := LoadKey(filepath.Join(root, "gum-keys", "public.gum-key.json"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	builtIn := DefaultPublicKey()
+	if !reflect.DeepEqual(template, builtIn) {
+		t.Fatalf("built-in public Gum key drifted from template\nbuilt-in: %#v\ntemplate: %#v", builtIn, template)
 	}
 }
 

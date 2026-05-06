@@ -118,10 +118,10 @@ a live human-language update without interrupting a brain call.
 
 Advanced/private builds can load a **Gum Key** with `CHEW_GUM_KEY=/path/to/key.json`.
 A Gum Key is a small `chew-gum-key.v0` profile that adds pack-specific
-instructions and, optionally, a foreground status provider. The public default
-works without a key: users get lightweight project Gum automatically. This repo
-also ships a concrete public profile at [`gum-keys/public.gum-key.json`](gum-keys/public.gum-key.json)
-for posts, demos, and anyone who wants to opt into the explicit Gum workflow:
+instructions and, optionally, a foreground status provider. The public command
+loads built-in Public Gum automatically when no key is set. This repo also ships
+a concrete public profile at [`gum-keys/public.gum-key.json`](gum-keys/public.gum-key.json)
+for posts, demos, debugging, and anyone who wants to point at the explicit file:
 
 ```sh
 CHEW_GUM_KEY="$PWD/gum-keys/public.gum-key.json" chew
@@ -131,6 +131,10 @@ Public Gum keeps CHEW conversational while making status reports traceable with
 simple labels like `Checkpoint`, `Next`, and `Blocked`. Private/internal
 launchers can use the same Gum Key shape to unlock richer workflow knowledge
 without forking the CHEW shell.
+
+Entrypoints stay split by responsibility: Gum Keys carry workflow guidance;
+runtime profiles carry model/state/endpoint details. See [`docs/entrypoints.md`](docs/entrypoints.md)
+for the public/internal contract.
 
 Preview runtime files live under **`.chew/runtime/`** and are ignored by
 `.chew/.gitignore`. That keeps local server PIDs and logs out of portable
@@ -193,6 +197,7 @@ shipping private workspace assumptions.
 .github/workflows/release.yml   tag v* → build all platforms → release
 build-binaries.sh               cross-compile chew for 5 platforms
 install.sh                      install the chew command system-wide
+docs/entrypoints.md             public/internal launcher contract
 cmd/chew/chat/
   encode/                         NES CHR-ROM encoder (asset pipeline)
   planner/                        regex vocabulary + frog voice pools

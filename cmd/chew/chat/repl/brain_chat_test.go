@@ -92,3 +92,14 @@ func TestBuildSystemPromptIncludesGumKeyInstructions(t *testing.T) {
 		}
 	}
 }
+
+func TestBuildSystemPromptIncludesDefaultPublicGumKey(t *testing.T) {
+	t.Setenv("CHEW_GUM_KEY", "")
+
+	prompt := buildSystemPrompt(nil)
+	for _, want := range []string{"Public Gum", "Checkpoint:", "Never ask the user to open"} {
+		if !strings.Contains(prompt, want) {
+			t.Fatalf("system prompt missing public Gum key text %q:\n%s", want, prompt)
+		}
+	}
+}

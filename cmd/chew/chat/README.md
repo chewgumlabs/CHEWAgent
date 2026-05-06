@@ -135,17 +135,21 @@ checkpoint to `.gum/status.json` and appends an event to
 state and questions like "what are you doing?" or "where are we at?" get a
 foreground answer from that checkpoint without interrupting the model.
 
-Optional Gum Keys extend that same surface. Set `CHEW_GUM_KEY` to a
-`chew-gum-key.v0` JSON file and the shell will add the key's instructions to
-the brain prompt. If the key includes a `status_command`, foreground status
-questions can call that provider and render its answer in the same TUI. The
-command is an argv array, not a shell string; CHEW expands environment
-variables but does not evaluate arbitrary shell syntax.
+Gum Keys extend that same surface. With no env var, CHEW loads the built-in
+Public Gum key. Set `CHEW_GUM_KEY` to a `chew-gum-key.v0` JSON file and the
+shell will use that key's instructions instead. If the key includes a
+`status_command`, foreground status questions can call that provider and render
+its answer in the same TUI. The command is an argv array, not a shell string;
+CHEW expands environment variables but does not evaluate arbitrary shell syntax.
 
 The repo ships a concrete public key at `gum-keys/public.gum-key.json`. It has
-no private status provider; it only tightens the public behavior contract:
+no private status provider and is tested against the built-in public key:
 CHEW talks naturally, Gum remains invisible, and progress/status answers stay
 traceable with `Checkpoint`, `Next`, and `Blocked` labels instead of raw JSON.
+
+Keep launcher concerns separate: Gum Keys carry workflow guidance, while runtime
+profiles carry model endpoint and state-home details. The public/internal
+entrypoint contract is documented in `docs/entrypoints.md`.
 
 Public CHEWAgent keeps Bonsai as the automatic default: normal users see
 `install brain`, `wake up`, and `nap`, not a model chooser. The hidden

@@ -40,6 +40,7 @@ type tuiApp struct {
 	sess         *chatSession
 	gumKey       gum.Key
 	gumKeyActive bool
+	gumKeyEnv    bool
 	gumKeyErr    string
 
 	brainDir         string
@@ -163,7 +164,7 @@ func (a *tuiApp) startup() {
 		a.appendBlock("No brain installed yet. Type 'install brain' to set one up.")
 	}
 	a.appendBlock(chatIntroText())
-	if a.gumKeyActive {
+	if a.gumKeyActive && a.gumKeyEnv {
 		a.appendBlock("Gum key: " + a.gumKey.Label())
 	} else if a.gumKeyErr != "" {
 		a.appendBlock("Gum key problem: " + a.gumKeyErr)
@@ -459,15 +460,14 @@ func (a *tuiApp) refreshTUIBrainSession() {
 }
 
 func (a *tuiApp) loadGumKey() {
-	key, ok, err := gum.LoadKeyFromEnv()
+	key, fromEnv, err := gum.ActiveKey()
 	if err != nil {
 		a.gumKeyErr = err.Error()
 		return
 	}
-	if ok {
-		a.gumKey = key
-		a.gumKeyActive = true
-	}
+	a.gumKey = key
+	a.gumKeyActive = true
+	a.gumKeyEnv = fromEnv
 }
 
 func (a *tuiApp) startGumKeyStatus(input string) {

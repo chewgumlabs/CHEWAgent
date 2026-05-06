@@ -37,6 +37,24 @@ func TestLoadKeyFromEnv(t *testing.T) {
 	}
 }
 
+func TestActiveKeyDefaultsToPublic(t *testing.T) {
+	t.Setenv(KeyEnv, "")
+
+	key, fromEnv, err := ActiveKey()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if fromEnv {
+		t.Fatal("default public key should not report env origin")
+	}
+	if key.Name != "chew-public" || key.Label() != "Public Gum" {
+		t.Fatalf("unexpected default key: %+v", key)
+	}
+	if len(key.StatusCommand) != 0 {
+		t.Fatalf("default public key should not include a status command: %#v", key.StatusCommand)
+	}
+}
+
 func TestLoadKeyRejectsWrongSchema(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "bad.json")
 	if err := os.WriteFile(path, []byte(`{"schema_version":"x","name":"bad"}`), 0o644); err != nil {

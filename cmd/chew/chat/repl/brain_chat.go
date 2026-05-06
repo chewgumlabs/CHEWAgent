@@ -62,7 +62,7 @@ func buildSystemPrompt(pj *project.Project) string {
 	var b strings.Builder
 	b.WriteString(chewSystemPrompt)
 
-	if key, ok, err := gum.LoadKeyFromEnv(); ok && err == nil {
+	if key, _, err := gum.ActiveKey(); err == nil {
 		b.WriteString("\n\n--- active Gum key ---\n")
 		fmt.Fprintf(&b, "Name: %s\n", key.Label())
 		if key.Summary != "" {
