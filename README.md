@@ -131,6 +131,8 @@ Public Gum keeps CHEW conversational while making status reports traceable with
 simple labels like `Checkpoint`, `Next`, and `Blocked`. Private/internal
 launchers can use the same Gum Key shape to unlock richer workflow knowledge
 without forking the CHEW shell.
+The shared active-workflow signpost contract lives at
+[`gum-keys/gum-orientation.schema.json`](gum-keys/gum-orientation.schema.json).
 
 Entrypoints stay split by responsibility: Gum Keys carry workflow guidance;
 runtime profiles carry model/state/endpoint details. See [`docs/entrypoints.md`](docs/entrypoints.md)

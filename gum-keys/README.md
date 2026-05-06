@@ -27,3 +27,12 @@ CHEW_GUM_KEY="$PWD/gum-keys/public.gum-key.json" chew
 The default public install works without that env var. This file exists as a
 concrete template for people who want the lightweight Gum workflow explicitly,
 and as the shape private/internal Gum packs can build from.
+
+## Orientation Contract
+
+Richer Gum packs can maintain an active workflow signpost for status providers.
+The public contract is
+[`gum-orientation.schema.json`](gum-orientation.schema.json). It keeps the
+surface small: current job, checkpoint, next safe action, blocked reason, risk,
+and evidence. CHEW should render that as conversation, not raw JSON, unless the
+user is debugging the machinery.

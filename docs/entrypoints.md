@@ -38,6 +38,9 @@ chew
 Optional launcher env can point the key's `status_command` at richer workflow
 machinery, but the TUI still receives the same kind of answer: human status
 text for CHEW to show.
+When that machinery has an active workflow marker, it should conform to
+[`gum-keys/gum-orientation.schema.json`](../gum-keys/gum-orientation.schema.json)
+and be translated into prose before it reaches the user.
 
 The intended pattern is:
 

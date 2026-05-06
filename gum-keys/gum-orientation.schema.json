@@ -1,0 +1,71 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://chewgumlabs.local/chewagent/gum-keys/gum-orientation.schema.json",
+  "title": "CHEW/Gum Active Workflow Orientation",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schema_version", "updated_at", "source", "active_job_id"],
+  "properties": {
+    "schema_version": {
+      "const": "chew-gum-orientation.v0"
+    },
+    "updated_at": {
+      "type": "string",
+      "format": "date-time"
+    },
+    "source": {
+      "type": "string",
+      "minLength": 1
+    },
+    "project_name": {
+      "type": "string"
+    },
+    "project_path": {
+      "type": "string"
+    },
+    "active_job_id": {
+      "type": "string",
+      "minLength": 1
+    },
+    "display_name": {
+      "type": "string"
+    },
+    "state": {
+      "type": "string",
+      "enum": ["done", "working", "waiting_for_user", "blocked", "error", "unknown"]
+    },
+    "decision": {
+      "type": "string",
+      "enum": ["proceed", "route_backward", "ask_user", "blocked", "explain_only"]
+    },
+    "checkpoint": {
+      "type": "string"
+    },
+    "next_safe_action": {
+      "type": "string"
+    },
+    "blocked": {
+      "type": "string"
+    },
+    "risk": {
+      "type": "string"
+    },
+    "evidence": {
+      "type": "array",
+      "items": {
+        "type": "string",
+        "minLength": 1
+      },
+      "uniqueItems": true
+    },
+    "updated_by": {
+      "type": "string"
+    },
+    "current_task": {
+      "type": "string"
+    },
+    "brain_alias": {
+      "type": "string"
+    }
+  }
+}
