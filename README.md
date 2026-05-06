@@ -119,8 +119,18 @@ a live human-language update without interrupting a brain call.
 Advanced/private builds can load a **Gum Key** with `CHEW_GUM_KEY=/path/to/key.json`.
 A Gum Key is a small `chew-gum-key.v0` profile that adds pack-specific
 instructions and, optionally, a foreground status provider. The public default
-has no key: users get lightweight project Gum. Private/internal launchers can
-ship richer Gum without forking the CHEW shell.
+works without a key: users get lightweight project Gum automatically. This repo
+also ships a concrete public profile at [`gum-keys/public.gum-key.json`](gum-keys/public.gum-key.json)
+for posts, demos, and anyone who wants to opt into the explicit Gum workflow:
+
+```sh
+CHEW_GUM_KEY="$PWD/gum-keys/public.gum-key.json" chew
+```
+
+Public Gum keeps CHEW conversational while making status reports traceable with
+simple labels like `Checkpoint`, `Next`, and `Blocked`. Private/internal
+launchers can use the same Gum Key shape to unlock richer workflow knowledge
+without forking the CHEW shell.
 
 Preview runtime files live under **`.chew/runtime/`** and are ignored by
 `.chew/.gitignore`. That keeps local server PIDs and logs out of portable
@@ -194,6 +204,7 @@ cmd/chew/chat/
   gum/                            stage detection + brain playbooks
   tool/                           web_search/web_fetch + file & shell verbs
   assets/                         CHEW + GUM sprite source data
+gum-keys/                       public Gum Key templates
 bin/<platform>/                 bundled llama-server runtimes
 brain/                          where Bonsai lives once installed (gitignored)
 ```

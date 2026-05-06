@@ -142,6 +142,11 @@ questions can call that provider and render its answer in the same TUI. The
 command is an argv array, not a shell string; CHEW expands environment
 variables but does not evaluate arbitrary shell syntax.
 
+The repo ships a concrete public key at `gum-keys/public.gum-key.json`. It has
+no private status provider; it only tightens the public behavior contract:
+CHEW talks naturally, Gum remains invisible, and progress/status answers stay
+traceable with `Checkpoint`, `Next`, and `Blocked` labels instead of raw JSON.
+
 Public CHEWAgent keeps Bonsai as the automatic default: normal users see
 `install brain`, `wake up`, and `nap`, not a model chooser. The hidden
 `wizard.ProfileConfig` contract (`<repo>/brain/config.json`,
