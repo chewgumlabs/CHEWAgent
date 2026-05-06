@@ -116,6 +116,12 @@ at `.gum/status.jsonl`. In the TUI, questions like "what are you doing?"
 or "where are we at?" are answered from those Gum facts, so CHEW can give
 a live human-language update without interrupting a brain call.
 
+Advanced/private builds can load a **Gum Key** with `CHEW_GUM_KEY=/path/to/key.json`.
+A Gum Key is a small `chew-gum-key.v0` profile that adds pack-specific
+instructions and, optionally, a foreground status provider. The public default
+has no key: users get lightweight project Gum. Private/internal launchers can
+ship richer Gum without forking the CHEW shell.
+
 Preview runtime files live under **`.chew/runtime/`** and are ignored by
 `.chew/.gitignore`. That keeps local server PIDs and logs out of portable
 project memory.
@@ -148,9 +154,11 @@ Two layers, working in parallel:
 2. **GUM, the steward** ([`cmd/chew/chat/gum/`](cmd/chew/chat/gum/)) is
    a deterministic layer that observes the project's shape — what's in
    `GUM.md`, `.gum/status.json`, what files exist, what's been committed —
-   and hands the brain a stage-appropriate playbook on every turn. Edit
-   `gum/instructions.go` to rewrite how CHEW behaves at each stage of
-   project life (no project / empty / intent known / started / mature).
+   and hands the brain a stage-appropriate playbook on every turn. Optional
+   Gum Keys can add pack-specific instructions and a status/orientation
+   provider without changing the TUI. Edit `gum/instructions.go` to rewrite how
+   CHEW behaves at each stage of project life (no project / empty / intent known
+   / started / mature).
 
 The brain (Bonsai) is the conversational layer. GUM is the situation
 awareness. They're separate on purpose: small models are great at

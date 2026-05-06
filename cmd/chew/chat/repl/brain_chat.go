@@ -62,6 +62,22 @@ func buildSystemPrompt(pj *project.Project) string {
 	var b strings.Builder
 	b.WriteString(chewSystemPrompt)
 
+	if key, ok, err := gum.LoadKeyFromEnv(); ok && err == nil {
+		b.WriteString("\n\n--- active Gum key ---\n")
+		fmt.Fprintf(&b, "Name: %s\n", key.Label())
+		if key.Summary != "" {
+			b.WriteString("Summary: ")
+			b.WriteString(key.Summary)
+			b.WriteString("\n")
+		}
+		if key.Instructions != "" {
+			b.WriteString("\nGum key instructions:\n")
+			b.WriteString(key.Instructions)
+			b.WriteString("\n")
+		}
+		b.WriteString("--- end Gum key ---")
+	}
+
 	if pj != nil {
 		b.WriteString("\n\n--- current project context ---\n")
 		fmt.Fprintf(&b, "Project: '%s'\n", pj.Name)

@@ -1,6 +1,7 @@
 package main
 
 import (
+	"os"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -67,6 +68,27 @@ func TestBuildSystemPromptHidesStarterMemoryBoilerplate(t *testing.T) {
 	} {
 		if strings.Contains(prompt, forbidden) {
 			t.Fatalf("system prompt leaked %q:\n%s", forbidden, prompt)
+		}
+	}
+}
+
+func TestBuildSystemPromptIncludesGumKeyInstructions(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "key.json")
+	if err := os.WriteFile(path, []byte(`{
+  "schema_version": "chew-gum-key.v0",
+  "name": "internal",
+  "display_name": "Internal Gum",
+  "summary": "Private workflow spine.",
+  "instructions": "Use the workflow status provider before guessing."
+}`), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("CHEW_GUM_KEY", path)
+
+	prompt := buildSystemPrompt(nil)
+	for _, want := range []string{"active Gum key", "Internal Gum", "workflow status provider"} {
+		if !strings.Contains(prompt, want) {
+			t.Fatalf("system prompt missing %q:\n%s", want, prompt)
 		}
 	}
 }

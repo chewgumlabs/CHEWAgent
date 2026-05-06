@@ -62,6 +62,7 @@ gum/       The Truth Steward — deterministic stage detection. Detect()
            / Started / Mature. Each stage has a paragraph of
            instructions in instructions.go that gets folded into the
            brain's system prompt, telling it what to do at this stage.
+           key.go owns the optional Gum Key profile contract.
 
 repl/      The chat shell binary. Wires planner + tools + wizards +
            project + gum together. brain_chat.go: HTTP client for the
@@ -133,6 +134,13 @@ checkpoint to `.gum/status.json` and appends an event to
 `.gum/status.jsonl`. While the brain is occupied, CHEW renders in ghost
 state and questions like "what are you doing?" or "where are we at?" get a
 foreground answer from that checkpoint without interrupting the model.
+
+Optional Gum Keys extend that same surface. Set `CHEW_GUM_KEY` to a
+`chew-gum-key.v0` JSON file and the shell will add the key's instructions to
+the brain prompt. If the key includes a `status_command`, foreground status
+questions can call that provider and render its answer in the same TUI. The
+command is an argv array, not a shell string; CHEW expands environment
+variables but does not evaluate arbitrary shell syntax.
 
 Public CHEWAgent keeps Bonsai as the automatic default: normal users see
 `install brain`, `wake up`, and `nap`, not a model chooser. The hidden

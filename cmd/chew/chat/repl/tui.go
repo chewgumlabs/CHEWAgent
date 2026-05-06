@@ -12,6 +12,7 @@ import (
 	"unicode"
 	"unicode/utf8"
 
+	"github.com/chewgumlabs/CHEWAgent/cmd/chew/chat/gum"
 	"github.com/chewgumlabs/CHEWAgent/cmd/chew/chat/planner"
 	"github.com/chewgumlabs/CHEWAgent/cmd/chew/chat/project"
 	chewsprite "github.com/chewgumlabs/CHEWAgent/cmd/chew/chat/sprite"
@@ -34,15 +35,20 @@ type tuiApp struct {
 	state *mascotState
 	work  *workStatus
 
-	brain atomic.Pointer[wizard.Brain]
-	proj  atomic.Pointer[project.Project]
-	sess  *chatSession
+	brain        atomic.Pointer[wizard.Brain]
+	proj         atomic.Pointer[project.Project]
+	sess         *chatSession
+	gumKey       gum.Key
+	gumKeyActive bool
+	gumKeyErr    string
 
-	brainDir       string
-	brainInstalled bool
-	installWizard  *wizard.InstallBrain
-	brainResults   chan brainResult
-	brainBusy      bool
+	brainDir         string
+	brainInstalled   bool
+	installWizard    *wizard.InstallBrain
+	brainResults     chan brainResult
+	gumStatusResults chan gumStatusResult
+	brainBusy        bool
+	gumStatusBusy    bool
 
 	transcript []string
 	input      []rune
@@ -57,6 +63,12 @@ type brainResult struct {
 	input string
 	reply string
 	err   error
+}
+
+type gumStatusResult struct {
+	input  string
+	output string
+	err    error
 }
 
 func runTUI() error {
@@ -107,10 +119,12 @@ func runTUI() error {
 			}
 		case result := <-app.brainResults:
 			app.finishBrainAsk(result)
+		case result := <-app.gumStatusResults:
+			app.finishGumKeyStatus(result)
 		case <-tick.C:
 			w, h := terminalSize()
 			gumExpired := app.clearExpiredGumBlip()
-			if w != app.width || h != app.height || gumExpired || app.gumBlipActive() || app.brainBusy || time.Since(app.state.lastTick) > 800*time.Millisecond {
+			if w != app.width || h != app.height || gumExpired || app.gumBlipActive() || app.brainBusy || app.gumStatusBusy || time.Since(app.state.lastTick) > 800*time.Millisecond {
 				app.state.advance()
 				app.render()
 			}
@@ -124,15 +138,17 @@ func runTUI() error {
 
 func newTUIApp() *tuiApp {
 	return &tuiApp{
-		p:            planner.NewScriptedPlanner(),
-		tools:        tool.NewDefault(),
-		state:        newMascotState("idle"),
-		work:         newWorkStatus(),
-		brainResults: make(chan brainResult, 1),
+		p:                planner.NewScriptedPlanner(),
+		tools:            tool.NewDefault(),
+		state:            newMascotState("idle"),
+		work:             newWorkStatus(),
+		brainResults:     make(chan brainResult, 1),
+		gumStatusResults: make(chan gumStatusResult, 1),
 	}
 }
 
 func (a *tuiApp) startup() {
+	a.loadGumKey()
 	brainState, brainDir := wizard.CheckBrain()
 	a.brainDir = brainDir
 	a.brainInstalled = brainState == wizard.BrainNapping
@@ -147,6 +163,11 @@ func (a *tuiApp) startup() {
 		a.appendBlock("No brain installed yet. Type 'install brain' to set one up.")
 	}
 	a.appendBlock(chatIntroText())
+	if a.gumKeyActive {
+		a.appendBlock("Gum key: " + a.gumKey.Label())
+	} else if a.gumKeyErr != "" {
+		a.appendBlock("Gum key problem: " + a.gumKeyErr)
+	}
 
 	if last := project.LoadLast(brainDir); last != "" {
 		if pj, err := project.Open(last); err == nil {
@@ -275,7 +296,7 @@ func (a *tuiApp) submitInput() bool {
 		a.render()
 		return false
 	}
-	if a.brainBusy {
+	if a.brainBusy || a.gumStatusBusy {
 		a.appendBlock("Still thinking. Ask 'what are you doing?' for the checkpoint, or let this answer land first.")
 		a.render()
 		return false
@@ -290,6 +311,10 @@ func (a *tuiApp) submitInput() bool {
 
 func (a *tuiApp) answerForegroundStatus(input string) bool {
 	if isWorkStatusQuestion(input) || (a.brainBusy && isBareStatusQuestion(input)) {
+		if !a.brainBusy && !a.gumStatusBusy && a.gumKeyActive && len(a.gumKey.StatusCommand) > 0 {
+			a.startGumKeyStatus(input)
+			return true
+		}
 		a.appendBlock(a.work.Answer(a.proj.Load(), a.brain.Load() != nil))
 		return true
 	}
@@ -431,6 +456,52 @@ func (a *tuiApp) refreshTUIBrainSession() {
 			Mascot:       "ghost",
 		}
 	})
+}
+
+func (a *tuiApp) loadGumKey() {
+	key, ok, err := gum.LoadKeyFromEnv()
+	if err != nil {
+		a.gumKeyErr = err.Error()
+		return
+	}
+	if ok {
+		a.gumKey = key
+		a.gumKeyActive = true
+	}
+}
+
+func (a *tuiApp) startGumKeyStatus(input string) {
+	if a.gumStatusBusy {
+		a.appendBlock(a.work.Answer(a.proj.Load(), a.brain.Load() != nil))
+		return
+	}
+	a.gumStatusBusy = true
+	a.blipGum()
+	a.state.set("ghost")
+	a.work.Start("checking "+a.gumKey.Label(), "Gum key status provider in progress.", a.proj.Load(), a.brain.Load())
+	a.work.Fact("Asked "+a.gumKey.Label()+" for orientation.", a.proj.Load())
+	a.appendBlock("Checking Gum. Hmph. Hold on...")
+	a.render()
+	key := a.gumKey
+	go func() {
+		out, err := runGumKeyStatusCommand(key)
+		a.gumStatusResults <- gumStatusResult{input: input, output: out, err: err}
+	}()
+}
+
+func (a *tuiApp) finishGumKeyStatus(result gumStatusResult) {
+	a.gumStatusBusy = false
+	if result.err != nil {
+		a.work.Fail("Gum key status failed: "+result.err.Error(), a.proj.Load())
+		a.appendBlock("Gum status failed: " + result.err.Error())
+		a.state.set("ghost")
+		a.render()
+		return
+	}
+	a.work.Finish("Gum status answered.", a.proj.Load())
+	a.appendBlock(result.output)
+	a.state.set("idle")
+	a.render()
 }
 
 func (a *tuiApp) startBrainAsk(input string) {
@@ -652,6 +723,7 @@ func (a *tuiApp) headerSideText(width int) []string {
 		"",
 		"brain: " + brain,
 		"project: " + projectName,
+		"gum: " + a.gumLabel(),
 	}
 	lines = append(lines, a.work.SideLines()...)
 	lines = append(lines,
@@ -663,6 +735,16 @@ func (a *tuiApp) headerSideText(width int) []string {
 		"",
 	)
 	return lines
+}
+
+func (a *tuiApp) gumLabel() string {
+	if a.gumKeyActive {
+		return a.gumKey.Label()
+	}
+	if a.gumKeyErr != "" {
+		return "key error"
+	}
+	return "public"
 }
 
 func (a *tuiApp) statusLine(width int) string {
@@ -677,6 +759,9 @@ func (a *tuiApp) statusLine(width int) string {
 	}
 	if a.brainBusy {
 		return "dialog: " + position + " | brain busy; ask 'what are you doing?' for Gum status"
+	}
+	if a.gumStatusBusy {
+		return "dialog: " + position + " | Gum status provider is checking orientation"
 	}
 	return "dialog: " + position + " | resize the terminal to show more"
 }

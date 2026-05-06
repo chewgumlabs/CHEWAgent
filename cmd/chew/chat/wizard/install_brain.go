@@ -200,6 +200,16 @@ const (
 
 // BrainDir returns the canonical directory for model/profile state.
 func BrainDir() (string, error) {
+	if env := strings.TrimSpace(os.Getenv("CHEW_STATE_HOME")); env != "" {
+		if !filepath.IsAbs(env) {
+			abs, err := filepath.Abs(env)
+			if err != nil {
+				return "", err
+			}
+			env = abs
+		}
+		return filepath.Join(env, "brain"), nil
+	}
 	root, err := repoAnchor()
 	if err != nil {
 		return "", err

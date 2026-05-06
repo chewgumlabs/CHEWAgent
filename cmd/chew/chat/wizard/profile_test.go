@@ -144,3 +144,15 @@ func TestCheckAndWakeOpenAICompatibleProfile(t *testing.T) {
 		t.Fatalf("alias = %q", brain.Alias())
 	}
 }
+
+func TestBrainDirHonorsStateHome(t *testing.T) {
+	stateHome := t.TempDir()
+	t.Setenv("CHEW_STATE_HOME", stateHome)
+	got, err := BrainDir()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got != filepath.Join(stateHome, "brain") {
+		t.Fatalf("BrainDir = %q, want state-local brain dir", got)
+	}
+}
