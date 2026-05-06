@@ -32,13 +32,17 @@ type tuiApp struct {
 	p     *planner.ScriptedPlanner
 	tools *tool.Registry
 	state *mascotState
+	work  *workStatus
 
 	brain atomic.Pointer[wizard.Brain]
 	proj  atomic.Pointer[project.Project]
+	sess  *chatSession
 
 	brainDir       string
 	brainInstalled bool
 	installWizard  *wizard.InstallBrain
+	brainResults   chan brainResult
+	brainBusy      bool
 
 	transcript []string
 	input      []rune
@@ -47,6 +51,12 @@ type tuiApp struct {
 	height     int
 
 	gumBlipUntil time.Time
+}
+
+type brainResult struct {
+	input string
+	reply string
+	err   error
 }
 
 func runTUI() error {
@@ -95,10 +105,12 @@ func runTUI() error {
 			if app.handleInputBytes(data) {
 				return nil
 			}
+		case result := <-app.brainResults:
+			app.finishBrainAsk(result)
 		case <-tick.C:
 			w, h := terminalSize()
 			gumExpired := app.clearExpiredGumBlip()
-			if w != app.width || h != app.height || gumExpired || app.gumBlipActive() || time.Since(app.state.lastTick) > 800*time.Millisecond {
+			if w != app.width || h != app.height || gumExpired || app.gumBlipActive() || app.brainBusy || time.Since(app.state.lastTick) > 800*time.Millisecond {
 				app.state.advance()
 				app.render()
 			}
@@ -112,9 +124,11 @@ func runTUI() error {
 
 func newTUIApp() *tuiApp {
 	return &tuiApp{
-		p:     planner.NewScriptedPlanner(),
-		tools: tool.NewDefault(),
-		state: newMascotState("idle"),
+		p:            planner.NewScriptedPlanner(),
+		tools:        tool.NewDefault(),
+		state:        newMascotState("idle"),
+		work:         newWorkStatus(),
+		brainResults: make(chan brainResult, 1),
 	}
 }
 
@@ -257,12 +271,29 @@ func (a *tuiApp) submitInput() bool {
 	}
 	a.appendBlock("> " + input)
 	a.render()
+	if a.answerForegroundStatus(input) {
+		a.render()
+		return false
+	}
+	if a.brainBusy {
+		a.appendBlock("Still thinking. Ask 'what are you doing?' for the checkpoint, or let this answer land first.")
+		a.render()
+		return false
+	}
 	quit := a.runTurn(input)
 	if !quit && a.state.current == "walk" {
 		a.state.set("idle")
 	}
 	a.render()
 	return quit
+}
+
+func (a *tuiApp) answerForegroundStatus(input string) bool {
+	if isWorkStatusQuestion(input) || (a.brainBusy && isBareStatusQuestion(input)) {
+		a.appendBlock(a.work.Answer(a.proj.Load(), a.brain.Load() != nil))
+		return true
+	}
+	return false
 }
 
 func (a *tuiApp) runTurn(input string) bool {
@@ -273,7 +304,7 @@ func (a *tuiApp) runTurn(input string) bool {
 				a.stopBrain()
 				a.brain.Store(newBrain)
 				a.brainInstalled = true
-				a.p.SetFallback(brainFallback(newBrain, a.proj.Load()))
+				a.refreshTUIBrainSession()
 			}
 			a.installWizard = nil
 			a.state.set("idle")
@@ -294,13 +325,16 @@ func (a *tuiApp) runTurn(input string) bool {
 	for _, v := range plan.Verbs {
 		a.blipGum()
 		a.render()
+		a.work.Start("running "+v.Name, "Gum is dispatching a local tool.", a.proj.Load(), a.brain.Load())
 		res, err := a.tools.Dispatch(v.Name, v.Params)
 		switch {
 		case errors.Is(err, tool.ErrUnknownTool):
 			a.appendBlock(fmt.Sprintf("(verb planned but not wired: %s %v)", v.Name, v.Params))
+			a.work.Fail("Tool was planned but not wired: "+v.Name, a.proj.Load())
 		case err != nil:
 			a.appendBlock(fmt.Sprintf("(error running %s: %v)", v.Name, err))
 			a.state.set("ghost")
+			a.work.Fail(fmt.Sprintf("%s failed: %v", v.Name, err), a.proj.Load())
 		default:
 			if res.Output != "" {
 				a.appendBlock(res.Output)
@@ -308,6 +342,8 @@ func (a *tuiApp) runTurn(input string) bool {
 			if res.Mascot != "" {
 				a.state.set(res.Mascot)
 			}
+			a.work.Fact("Tool finished: "+v.Name, a.proj.Load())
+			a.work.Finish("Tool finished: "+v.Name, a.proj.Load())
 		}
 		a.render()
 	}
@@ -318,13 +354,17 @@ func (a *tuiApp) runTurn(input string) bool {
 
 	if plan.LaunchWizard != "" {
 		a.runSystemAction(plan)
-		a.state.set("idle")
+		if !a.brainBusy {
+			a.state.set("idle")
+		}
 	}
 	return false
 }
 
 func (a *tuiApp) runSystemAction(plan planner.Plan) {
 	switch plan.LaunchWizard {
+	case "ask_brain":
+		a.startBrainAsk(plan.LaunchArgs["input"])
 	case "install_brain":
 		a.installWizard = wizard.NewInstallBrain()
 		a.installWizard.Begin(a.reply)
@@ -332,9 +372,11 @@ func (a *tuiApp) runSystemAction(plan planner.Plan) {
 		handleWakeBrainWithReply(a.p, &a.brain, &a.proj, a.reply)
 		if a.brain.Load() != nil {
 			a.brainInstalled = true
+			a.refreshTUIBrainSession()
 		}
 	case "nap_brain":
 		handleNapBrainWithReply(a.p, &a.brain, a.brainDir, a.reply)
+		a.sess = nil
 	case "brain_status":
 		handleBrainStatusWithReply(a.p, &a.brain, a.brainDir, a.reply)
 	case "profile_status":
@@ -345,14 +387,17 @@ func (a *tuiApp) runSystemAction(plan planner.Plan) {
 		handleProfileUseWithReply(a.p, &a.brain, a.brainDir, plan.LaunchArgs["name"], a.reply)
 		a.brainInstalled = wizard.CheckBrainAt(a.brainDir) == wizard.BrainNapping
 		setFallbackForBrainState(a.p, a.brainDir)
+		a.sess = nil
 	case "open_project":
 		a.blipGum()
 		a.render()
 		handleOpenProjectWithReply(a.p, a.tools, &a.proj, &a.brain, a.brainDir, plan.LaunchArgs["path"], a.reply)
+		a.refreshTUIBrainSession()
 	case "create_project":
 		a.blipGum()
 		a.render()
 		handleCreateProjectWithReply(a.p, a.tools, &a.proj, &a.brain, a.brainDir, plan.LaunchArgs["name"], a.reply)
+		a.refreshTUIBrainSession()
 	case "create_folder":
 		a.blipGum()
 		a.render()
@@ -361,13 +406,85 @@ func (a *tuiApp) runSystemAction(plan planner.Plan) {
 		a.blipGum()
 		a.render()
 		handleForgetProjectWithReply(a.p, a.tools, &a.proj, &a.brain, a.brainDir, a.reply)
+		a.refreshTUIBrainSession()
 	case "remember_note":
 		a.blipGum()
 		a.render()
 		handleRememberNoteWithReply(a.p, &a.proj, &a.brain, plan.LaunchArgs["note"], a.reply)
+		a.refreshTUIBrainSession()
 	default:
 		a.appendBlock(fmt.Sprintf("(unknown wizard requested: %s)", plan.LaunchWizard))
 	}
+}
+
+func (a *tuiApp) refreshTUIBrainSession() {
+	b := a.brain.Load()
+	if b == nil {
+		a.sess = nil
+		return
+	}
+	a.sess = newChatSession(b, a.proj.Load())
+	a.p.SetFallback(func(input string) planner.Plan {
+		return planner.Plan{
+			LaunchWizard: "ask_brain",
+			LaunchArgs:   map[string]string{"input": input},
+			Mascot:       "ghost",
+		}
+	})
+}
+
+func (a *tuiApp) startBrainAsk(input string) {
+	input = strings.TrimSpace(input)
+	if input == "" {
+		return
+	}
+	if a.brainBusy {
+		a.appendBlock(a.work.Answer(a.proj.Load(), a.brain.Load() != nil))
+		return
+	}
+	b := a.brain.Load()
+	if b == nil {
+		a.appendBlock(a.p.PickVoice("brain_not_installed"))
+		setFallbackForBrainState(a.p, a.brainDir)
+		return
+	}
+	if captureIntentFromChat(a.proj.Load(), input) {
+		a.refreshTUIBrainSession()
+	}
+	if a.sess == nil {
+		a.refreshTUIBrainSession()
+	}
+	sess := a.sess
+	if sess == nil {
+		a.appendBlock("Hmph. Brain session is missing. Try 'wake up' again.")
+		return
+	}
+	a.brainBusy = true
+	a.state.set("ghost")
+	a.work.Start(input, "Brain call in progress.", a.proj.Load(), b)
+	a.work.Fact("Sent request to "+b.Alias()+".", a.proj.Load())
+	a.appendBlock("Thinking. Ask 'what are you doing?' if you want the checkpoint while I work.")
+	a.render()
+	go func() {
+		reply, err := sess.ask(input)
+		a.brainResults <- brainResult{input: input, reply: reply, err: err}
+	}()
+}
+
+func (a *tuiApp) finishBrainAsk(result brainResult) {
+	a.brainBusy = false
+	if result.err != nil {
+		a.work.Fail("Brain did not answer: "+result.err.Error(), a.proj.Load())
+		a.appendBlock(fmt.Sprintf("Hmph. Brain didn't answer: %v", result.err))
+		a.state.set("ghost")
+		a.render()
+		return
+	}
+	a.work.Fact("Brain answered.", a.proj.Load())
+	a.work.Finish("Brain answered.", a.proj.Load())
+	a.appendBlock(result.reply)
+	a.state.set("idle")
+	a.render()
 }
 
 func (a *tuiApp) blipGum() {
@@ -530,18 +647,22 @@ func (a *tuiApp) headerSideText(width int) []string {
 	} else if a.brainInstalled {
 		brain = "napping"
 	}
-	return []string{
+	lines := []string{
 		"CHEW",
 		"",
 		"brain: " + brain,
 		"project: " + projectName,
+	}
+	lines = append(lines, a.work.SideLines()...)
+	lines = append(lines,
 		"",
 		"PageUp/PageDown scroll",
 		"Up/Down scroll one line",
 		"Ctrl+U clears input",
 		"Ctrl+C quits",
 		"",
-	}
+	)
+	return lines
 }
 
 func (a *tuiApp) statusLine(width int) string {
@@ -553,6 +674,9 @@ func (a *tuiApp) statusLine(width int) string {
 	}
 	if total <= visible {
 		position = "all text visible"
+	}
+	if a.brainBusy {
+		return "dialog: " + position + " | brain busy; ask 'what are you doing?' for Gum status"
 	}
 	return "dialog: " + position + " | resize the terminal to show more"
 }

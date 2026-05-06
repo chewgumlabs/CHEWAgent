@@ -52,8 +52,9 @@ wizard/    Multi-step interactive flows. Currently: install_brain
            voice.go in this package holds the wizard-specific text.
 
 project/   "A project is a folder." Open(path), Create(path),
-           starter GUM.md template, last-project memory. Silent
-           git init on Create (save points without saying "git").
+           starter GUM.md template, last-project memory, and the
+           `.gum/status.json` / `.gum/status.jsonl` checkpoint trail.
+           Silent git init on Create (save points without saying "git").
 
 gum/       The Truth Steward — deterministic stage detection. Detect()
            observes a project (GUM.md content, source files, commits)
@@ -67,6 +68,9 @@ repl/      The chat shell binary. Wires planner + tools + wizards +
            OpenAI-compat endpoint llama-server exposes; system prompt
            built from gum.Detect/Instructions + project's GUM.md.
            main.go: REPL loop, mascot rendering, signal handling.
+           tui.go keeps brain-backed free-form asks asynchronous so the
+           header keeps animating and status questions can be answered
+           from Gum facts while the model is busy.
 
 testbed/   Sprite playground. `go run ./cmd/chew/chat/testbed`. Type
            0..7 to step through CHEW frames, gum 0..5 for GUM, all to
@@ -84,8 +88,8 @@ assets/    Source art. CHEW_NES.png + CHEW_NES.json (Aseprite export),
 | frames | state | when CHEW shows it |
 |---|---|---|
 | 0–2 | idle | waiting for input, no verb in flight |
-| 3–5 | walk | verb running / brain thinking |
-| 6–7 | ghost | error / brain unreachable / no brain installed |
+| 3–5 | walk | deterministic verb/tool work |
+| 6–7 | ghost | brainless, unreachable, error, or a long brain call in flight |
 
 `assets/nesGUM.png` is also encoded in Go. The chat still talks as CHEW, but
 the TUI can briefly swap the header sprite to Gum for deterministic records
@@ -122,6 +126,13 @@ CHEW is intentionally three layers, each in its own role:
 Small models (Bonsai is 8B-class compressed to 1.16 GB) are great at
 language and bad at tracking state across turns. GUM does the tracking
 deterministically and tells the brain what matters this turn.
+
+The TUI treats work status as a Gum fact, not a second model call. When
+CHEW sends a long free-form request to the brain, it writes a compact
+checkpoint to `.gum/status.json` and appends an event to
+`.gum/status.jsonl`. While the brain is occupied, CHEW renders in ghost
+state and questions like "what are you doing?" or "where are we at?" get a
+foreground answer from that checkpoint without interrupting the model.
 
 Public CHEWAgent keeps Bonsai as the automatic default: normal users see
 `install brain`, `wake up`, and `nap`, not a model chooser. The hidden

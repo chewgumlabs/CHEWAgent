@@ -2,8 +2,9 @@
 //
 // CHEW has three states tied to actual system activity:
 //   idle  — waiting for input (CHEW idle frames)
-//   walk  — verb running / brain thinking (CHEW walk frames)
-//   ghost — error / brainless / unreachable (CHEW ghost frames)
+//   walk  — deterministic verb/tool work (CHEW walk frames)
+//   ghost — model unavailable, brainless, or busy on a long brain call
+//           (CHEW ghost frames)
 //
 // The TUI can briefly render Gum over the same state machine when the
 // records/planning layer is active. Gum maps the same state names onto her

@@ -110,6 +110,12 @@ Each project carries CHEW's project memory. He reads it on arrival to
 catch up on what's true, and updates it as significant decisions land.
 You talk to CHEW; he keeps the notes.
 
+CHEW also keeps a tiny Gum status trail while he works. The current
+checkpoint lives at `.gum/status.json`; the append-only event trail lives
+at `.gum/status.jsonl`. In the TUI, questions like "what are you doing?"
+or "where are we at?" are answered from those Gum facts, so CHEW can give
+a live human-language update without interrupting a brain call.
+
 Preview runtime files live under **`.chew/runtime/`** and are ignored by
 `.chew/.gitignore`. That keeps local server PIDs and logs out of portable
 project memory.
@@ -141,8 +147,8 @@ Two layers, working in parallel:
    Edit `planner/voice.go` to rewrite anything CHEW says.
 2. **GUM, the steward** ([`cmd/chew/chat/gum/`](cmd/chew/chat/gum/)) is
    a deterministic layer that observes the project's shape — what's in
-   `GUM.md`, what files exist, what's been committed — and hands the
-   brain a stage-appropriate playbook on every turn. Edit
+   `GUM.md`, `.gum/status.json`, what files exist, what's been committed —
+   and hands the brain a stage-appropriate playbook on every turn. Edit
    `gum/instructions.go` to rewrite how CHEW behaves at each stage of
    project life (no project / empty / intent known / started / mature).
 
@@ -150,7 +156,10 @@ The brain (Bonsai) is the conversational layer. GUM is the situation
 awareness. They're separate on purpose: small models are great at
 language, bad at tracking state, so GUM does the tracking deterministically
 and tells the brain what to focus on each turn. CHEW stays the one you talk
-to; Gum can briefly pop into the header during records/tool work.
+to; Gum can briefly pop into the header during records/tool work. When the
+brain is busy, the TUI keeps animating and status questions are answered
+from the last emitted Gum checkpoint instead of sending a second prompt to
+the model.
 
 Naming-wise, this repo is the public **`chew.agent`** chassis: the local
 CLI, deterministic verbs, GUM project memory, mascot shell, and small-model
