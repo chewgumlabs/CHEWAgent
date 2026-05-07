@@ -117,8 +117,8 @@ func repoAnchor() (string, error) {
 		}
 	}
 	if exe, err := os.Executable(); err == nil {
-		// Follow symlinks so `/usr/local/bin/chew → ~/Documents/CHEWAgent/chew`
-		// resolves to the real repo location.
+		// Follow symlinks so an installed `chew` command resolves to the real
+		// repo location.
 		if real, err := filepath.EvalSymlinks(exe); err == nil {
 			exe = real
 		}
