@@ -41,6 +41,10 @@ func TestProfileConfig_SaveLoadAndSwitch(t *testing.T) {
 		Source:     "chew.internal",
 		BaseURL:    "http://127.0.0.1:9911/v1",
 		ModelAlias: "qwen3.5",
+		APIKeyEnv:  "QWEN_API_KEY",
+		ExtraBody: map[string]any{
+			"reasoning_effort": "high",
+		},
 	})
 
 	if err := SaveProfileConfig(brainDir, cfg); err != nil {
@@ -64,6 +68,12 @@ func TestProfileConfig_SaveLoadAndSwitch(t *testing.T) {
 	}
 	if active.Name != "qwen" || active.BaseURL != "http://127.0.0.1:9911" {
 		t.Fatalf("active after reload = %+v", active)
+	}
+	if active.APIKeyEnv != "QWEN_API_KEY" {
+		t.Fatalf("api key env = %q", active.APIKeyEnv)
+	}
+	if active.ExtraBody["reasoning_effort"] != "high" {
+		t.Fatalf("extra body not preserved: %#v", active.ExtraBody)
 	}
 	list := FormatProfileList(reloaded)
 	if !strings.Contains(list, "* qwen") || !strings.Contains(list, "bonsai") {
@@ -120,6 +130,7 @@ func TestCheckAndWakeOpenAICompatibleProfile(t *testing.T) {
 		Provider:   ProviderOpenAICompatible,
 		BaseURL:    "http://127.0.0.1:9911/v1",
 		ModelAlias: "qwen3.5",
+		APIKeyEnv:  "QWEN_API_KEY",
 	})
 	if err := SaveProfileConfig(brainDir, cfg); err != nil {
 		t.Fatal(err)
@@ -133,6 +144,15 @@ func TestCheckAndWakeOpenAICompatibleProfile(t *testing.T) {
 		t.Fatalf("brainDir = %q, want %q", gotDir, brainDir)
 	}
 
+	_, err := WakeBrain()
+	if err == nil {
+		t.Fatal("WakeBrain should require the configured API key env var")
+	}
+	if !strings.Contains(err.Error(), "QWEN_API_KEY") {
+		t.Fatalf("wake error should name missing env var, got %v", err)
+	}
+
+	t.Setenv("QWEN_API_KEY", "test-key")
 	brain, err := WakeBrain()
 	if err != nil {
 		t.Fatal(err)
@@ -142,6 +162,9 @@ func TestCheckAndWakeOpenAICompatibleProfile(t *testing.T) {
 	}
 	if brain.Alias() != "qwen3.5" {
 		t.Fatalf("alias = %q", brain.Alias())
+	}
+	if brain.APIKey() != "test-key" {
+		t.Fatalf("api key not attached")
 	}
 }
 

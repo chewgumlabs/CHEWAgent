@@ -100,10 +100,12 @@ type chatMessage struct {
 
 // chatSession maintains conversation history with one brain.
 type chatSession struct {
-	endpoint string
-	alias    string
-	client   *http.Client
-	messages []chatMessage
+	endpoint  string
+	alias     string
+	apiKey    string
+	extraBody map[string]any
+	client    *http.Client
+	messages  []chatMessage
 }
 
 // newChatSession builds a fresh conversation. pj may be nil — that's
@@ -112,8 +114,10 @@ type chatSession struct {
 // system prompt.
 func newChatSession(b *wizard.Brain, pj *project.Project) *chatSession {
 	return &chatSession{
-		endpoint: b.Endpoint() + "/v1/chat/completions",
-		alias:    b.Alias(),
+		endpoint:  b.ChatCompletionsURL(),
+		alias:     b.Alias(),
+		apiKey:    b.APIKey(),
+		extraBody: b.ExtraBody(),
 		// No timeout — the brain may take a minute on a CPU-only laptop and
 		// we don't want to interrupt it. The user can Ctrl-C if needed.
 		client: &http.Client{Timeout: 0},
@@ -128,19 +132,37 @@ func newChatSession(b *wizard.Brain, pj *project.Project) *chatSession {
 func (s *chatSession) ask(input string) (string, error) {
 	s.messages = append(s.messages, chatMessage{Role: "user", Content: input})
 
-	payload, err := json.Marshal(map[string]any{
+	payloadMap := map[string]any{
 		"model":       s.alias,
 		"messages":    s.messages,
 		"temperature": 0.7,
 		"stream":      false,
-	})
+	}
+	for k, v := range s.extraBody {
+		if isProtectedChatPayloadKey(k) {
+			continue
+		}
+		payloadMap[k] = v
+	}
+
+	payload, err := json.Marshal(payloadMap)
 	if err != nil {
 		// Roll back the user message if we failed to send it.
 		s.messages = s.messages[:len(s.messages)-1]
 		return "", fmt.Errorf("encode: %w", err)
 	}
 
-	resp, err := s.client.Post(s.endpoint, "application/json", bytes.NewReader(payload))
+	req, err := http.NewRequest(http.MethodPost, s.endpoint, bytes.NewReader(payload))
+	if err != nil {
+		s.messages = s.messages[:len(s.messages)-1]
+		return "", fmt.Errorf("request: %w", err)
+	}
+	req.Header.Set("Content-Type", "application/json")
+	if strings.TrimSpace(s.apiKey) != "" {
+		req.Header.Set("Authorization", "Bearer "+strings.TrimSpace(s.apiKey))
+	}
+
+	resp, err := s.client.Do(req)
 	if err != nil {
 		s.messages = s.messages[:len(s.messages)-1]
 		return "", fmt.Errorf("brain: %w", err)
@@ -168,6 +190,15 @@ func (s *chatSession) ask(input string) (string, error) {
 	reply := result.Choices[0].Message.Content
 	s.messages = append(s.messages, chatMessage{Role: "assistant", Content: reply})
 	return reply, nil
+}
+
+func isProtectedChatPayloadKey(key string) bool {
+	switch strings.ToLower(strings.TrimSpace(key)) {
+	case "model", "messages", "stream":
+		return true
+	default:
+		return false
+	}
 }
 
 // brainFallback returns a planner.SetFallback-compatible function that

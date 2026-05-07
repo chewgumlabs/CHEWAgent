@@ -296,7 +296,18 @@ func WakeBrain() (*Brain, error) {
 		if prof.BaseURL == "" {
 			return nil, errors.New("active brain profile is missing an endpoint")
 		}
-		return AttachBrain(prof.BaseURL, prof.ModelAlias), nil
+		apiKey := ""
+		if prof.APIKeyEnv != "" {
+			apiKey = strings.TrimSpace(os.Getenv(prof.APIKeyEnv))
+			if apiKey == "" {
+				return nil, fmt.Errorf("brain API key env %s is not set", prof.APIKeyEnv)
+			}
+		}
+		return AttachBrainWithOptions(prof.BaseURL, prof.ModelAlias, BrainAttachOptions{
+			APIKey:    apiKey,
+			ChatPath:  prof.ChatPath,
+			ExtraBody: prof.ExtraBody,
+		}), nil
 	case ProviderLlamaServer:
 		return wakeLocalBrain(brainDir, prof)
 	default:

@@ -1,6 +1,9 @@
 package main
 
 import (
+	"encoding/json"
+	"net/http"
+	"net/http/httptest"
 	"os"
 	"path/filepath"
 	"strings"
@@ -8,6 +11,7 @@ import (
 
 	"github.com/chewgumlabs/CHEWAgent/cmd/chew/chat/gum"
 	"github.com/chewgumlabs/CHEWAgent/cmd/chew/chat/project"
+	"github.com/chewgumlabs/CHEWAgent/cmd/chew/chat/wizard"
 )
 
 func TestIntentFromChatCapturesBuildIntent(t *testing.T) {
@@ -101,5 +105,58 @@ func TestBuildSystemPromptIncludesDefaultPublicGumKey(t *testing.T) {
 		if !strings.Contains(prompt, want) {
 			t.Fatalf("system prompt missing public Gum key text %q:\n%s", want, prompt)
 		}
+	}
+}
+
+func TestChatSessionSendsBearerTokenAndExtraBody(t *testing.T) {
+	var gotAuth string
+	var gotPayload map[string]any
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/chat/completions" {
+			t.Fatalf("path = %q", r.URL.Path)
+		}
+		gotAuth = r.Header.Get("Authorization")
+		if err := json.NewDecoder(r.Body).Decode(&gotPayload); err != nil {
+			t.Fatalf("decode request: %v", err)
+		}
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{
+		  "choices": [
+		    {"message": {"role": "assistant", "content": "Fine. I am extremely overpowered now."}}
+		  ]
+		}`))
+	}))
+	defer server.Close()
+
+	brain := wizard.AttachBrainWithOptions(server.URL+"/v1", "deepseek-v4-pro", wizard.BrainAttachOptions{
+		APIKey:   "secret-test-key",
+		ChatPath: "/chat/completions",
+		ExtraBody: map[string]any{
+			"reasoning_effort": "high",
+			"thinking":         map[string]any{"type": "enabled"},
+			"model":            "do-not-override",
+		},
+	})
+	session := newChatSession(brain, nil)
+	reply, err := session.ask("wake up and think harder")
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	if reply != "Fine. I am extremely overpowered now." {
+		t.Fatalf("reply = %q", reply)
+	}
+	if gotAuth != "Bearer secret-test-key" {
+		t.Fatalf("authorization = %q", gotAuth)
+	}
+	if gotPayload["model"] != "deepseek-v4-pro" {
+		t.Fatalf("model should not be overridden: %#v", gotPayload["model"])
+	}
+	if gotPayload["reasoning_effort"] != "high" {
+		t.Fatalf("reasoning_effort missing: %#v", gotPayload)
+	}
+	thinking, ok := gotPayload["thinking"].(map[string]any)
+	if !ok || thinking["type"] != "enabled" {
+		t.Fatalf("thinking extra body missing: %#v", gotPayload["thinking"])
 	}
 }

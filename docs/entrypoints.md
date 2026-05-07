@@ -55,3 +55,44 @@ The intended pattern is:
 Gum Keys should not choose models. Runtime profiles should not define workflow
 truth. Keeping that boundary clear lets public improvements and private Gum
 packs share the same core CHEW behavior without stepping on each other.
+
+## Hidden OpenAI-Compatible Brains
+
+Public CHEWAgent still defaults to Bonsai. Stronger hosted models can be added
+as hidden runtime profiles in CHEW's state-local `brain/config.json`; API keys
+stay in environment variables and are never written to the profile file.
+
+Example DeepSeek V4 profile:
+
+```json
+{
+  "name": "deepseek-v4-pro",
+  "display_name": "DeepSeek V4 Pro",
+  "provider": "openai-compatible",
+  "source": "private",
+  "managed": false,
+  "base_url": "https://api.deepseek.com",
+  "chat_path": "/chat/completions",
+  "model_alias": "deepseek-v4-pro",
+  "api_key_env": "DEEPSEEK_API_KEY",
+  "extra_body": {
+    "reasoning_effort": "high",
+    "thinking": { "type": "enabled" }
+  }
+}
+```
+
+With that profile present:
+
+```sh
+export DEEPSEEK_API_KEY="..."
+chew
+# inside CHEW:
+# profile use deepseek-v4-pro
+# wake up
+```
+
+The same profile shape works for OpenAI-compatible providers by changing
+`base_url`, `chat_path`, `model_alias`, and `api_key_env`. If `chat_path` is
+omitted, CHEW uses `/v1/chat/completions`, which matches local `llama-server`
+and OpenAI-style endpoints.

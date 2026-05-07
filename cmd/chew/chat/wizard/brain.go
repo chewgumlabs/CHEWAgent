@@ -69,12 +69,15 @@ func processAlive(pid int) bool {
 
 // Brain is a running llama-server subprocess.
 type Brain struct {
-	cmd      *exec.Cmd
-	endpoint string // e.g. "http://127.0.0.1:8080"
-	alias    string // model name to send to the OpenAI-compatible API
-	logPath  string
-	metaPath string // <brainDir>/brain.pid.json; written on Start, removed on Stop
-	stopOnce bool
+	cmd       *exec.Cmd
+	endpoint  string // e.g. "http://127.0.0.1:8080"
+	chatPath  string
+	alias     string // model name to send to the OpenAI-compatible API
+	apiKey    string
+	extraBody map[string]any
+	logPath   string
+	metaPath  string // <brainDir>/brain.pid.json; written on Start, removed on Stop
+	stopOnce  bool
 }
 
 // StartBrain spawns llama-server with the given config. Returns immediately
@@ -149,18 +152,41 @@ func StartBrain(cfg BrainConfig) (*Brain, error) {
 // AttachBrain returns a handle for an already-running OpenAI-compatible
 // endpoint. CHEW does not own the process, so Stop is a no-op.
 func AttachBrain(baseURL, alias string) *Brain {
+	return AttachBrainWithOptions(baseURL, alias, BrainAttachOptions{})
+}
+
+// BrainAttachOptions carries optional request settings for external
+// OpenAI-compatible endpoints. API keys are read from env by the caller, not
+// stored in the profile file.
+type BrainAttachOptions struct {
+	APIKey    string
+	ChatPath  string
+	ExtraBody map[string]any
+}
+
+func AttachBrainWithOptions(baseURL, alias string, opts BrainAttachOptions) *Brain {
 	baseURL = baseURLFromChatEndpoint(baseURL)
 	if alias == "" {
 		alias = "ChewBrain"
 	}
 	return &Brain{
-		endpoint: baseURL,
-		alias:    alias,
+		endpoint:  baseURL,
+		chatPath:  normalizeChatPath(opts.ChatPath),
+		alias:     alias,
+		apiKey:    strings.TrimSpace(opts.APIKey),
+		extraBody: cloneExtraBody(opts.ExtraBody),
 	}
 }
 
 // Endpoint returns the http://host:port the brain is serving on.
 func (b *Brain) Endpoint() string { return b.endpoint }
+
+func (b *Brain) ChatCompletionsURL() string {
+	if b == nil {
+		return ""
+	}
+	return chatCompletionsURL(b.endpoint, b.chatPath)
+}
 
 // Alias returns the model name sent in chat requests.
 func (b *Brain) Alias() string {
@@ -168,6 +194,24 @@ func (b *Brain) Alias() string {
 		return "ChewBrain"
 	}
 	return b.alias
+}
+
+// APIKey returns the bearer token for cloud OpenAI-compatible endpoints.
+// Empty means no Authorization header is sent.
+func (b *Brain) APIKey() string {
+	if b == nil {
+		return ""
+	}
+	return b.apiKey
+}
+
+// ExtraBody returns profile-provided request fields for OpenAI-compatible
+// endpoints. The caller may merge these into the chat-completions payload.
+func (b *Brain) ExtraBody() map[string]any {
+	if b == nil {
+		return nil
+	}
+	return cloneExtraBody(b.extraBody)
 }
 
 // LogPath returns the file the brain writes its logs to (may be empty).
@@ -179,6 +223,17 @@ func (b *Brain) PID() int {
 		return 0
 	}
 	return b.cmd.Process.Pid
+}
+
+func cloneExtraBody(src map[string]any) map[string]any {
+	if len(src) == 0 {
+		return nil
+	}
+	dst := make(map[string]any, len(src))
+	for k, v := range src {
+		dst[k] = v
+	}
+	return dst
 }
 
 // WaitHealthy polls /health until it returns 200 or ctx is canceled.

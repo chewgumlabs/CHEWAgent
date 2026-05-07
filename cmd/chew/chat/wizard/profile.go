@@ -22,16 +22,19 @@ const (
 // Public CHEWAgent ships with a managed local llama-server profile; internal
 // CHEW can add OpenAI-compatible endpoints without changing the chat shell.
 type BrainProfile struct {
-	Name        string `json:"name"`
-	DisplayName string `json:"display_name,omitempty"`
-	Provider    string `json:"provider"`
-	Source      string `json:"source,omitempty"`
-	Managed     bool   `json:"managed"`
-	BaseURL     string `json:"base_url,omitempty"`
-	ModelAlias  string `json:"model_alias"`
-	ModelPath   string `json:"model_path,omitempty"`
-	Port        int    `json:"port,omitempty"`
-	Notes       string `json:"notes,omitempty"`
+	Name        string         `json:"name"`
+	DisplayName string         `json:"display_name,omitempty"`
+	Provider    string         `json:"provider"`
+	Source      string         `json:"source,omitempty"`
+	Managed     bool           `json:"managed"`
+	BaseURL     string         `json:"base_url,omitempty"`
+	ChatPath    string         `json:"chat_path,omitempty"`
+	ModelAlias  string         `json:"model_alias"`
+	APIKeyEnv   string         `json:"api_key_env,omitempty"`
+	ExtraBody   map[string]any `json:"extra_body,omitempty"`
+	ModelPath   string         `json:"model_path,omitempty"`
+	Port        int            `json:"port,omitempty"`
+	Notes       string         `json:"notes,omitempty"`
 }
 
 // ProfileConfig is the on-disk model/profile contract.
@@ -183,7 +186,7 @@ func FormatProfileStatus(cfg ProfileConfig) string {
 		lines = append(lines, "runtime: managed by CHEW")
 	}
 	if prof.BaseURL != "" {
-		lines = append(lines, "endpoint: "+chatCompletionsURL(prof.BaseURL))
+		lines = append(lines, "endpoint: "+chatCompletionsURL(prof.BaseURL, prof.ChatPath))
 	}
 	if prof.Source != "" {
 		lines = append(lines, "source: "+prof.Source)
@@ -241,9 +244,14 @@ func normalizeProfile(prof BrainProfile) BrainProfile {
 	}
 	prof.Source = strings.TrimSpace(prof.Source)
 	prof.BaseURL = baseURLFromChatEndpoint(prof.BaseURL)
+	prof.ChatPath = normalizeChatPath(prof.ChatPath)
 	prof.ModelAlias = strings.TrimSpace(prof.ModelAlias)
 	if prof.ModelAlias == "" {
 		prof.ModelAlias = "ChewBrain"
+	}
+	prof.APIKeyEnv = strings.TrimSpace(prof.APIKeyEnv)
+	if len(prof.ExtraBody) == 0 {
+		prof.ExtraBody = nil
 	}
 	prof.ModelPath = strings.TrimSpace(prof.ModelPath)
 	prof.Notes = strings.TrimSpace(prof.Notes)
@@ -261,10 +269,10 @@ func profileLocation(prof BrainProfile) string {
 		}
 		return "local runtime"
 	case ProviderOpenAICompatible:
-		return chatCompletionsURL(prof.BaseURL)
+		return chatCompletionsURL(prof.BaseURL, prof.ChatPath)
 	default:
 		if prof.BaseURL != "" {
-			return chatCompletionsURL(prof.BaseURL)
+			return chatCompletionsURL(prof.BaseURL, prof.ChatPath)
 		}
 		return "configured"
 	}
@@ -280,10 +288,25 @@ func baseURLFromChatEndpoint(endpoint string) string {
 	return s
 }
 
-func chatCompletionsURL(base string) string {
+func normalizeChatPath(chatPath string) string {
+	chatPath = strings.TrimSpace(chatPath)
+	if chatPath == "" {
+		return ""
+	}
+	if !strings.HasPrefix(chatPath, "/") {
+		chatPath = "/" + chatPath
+	}
+	return strings.TrimRight(chatPath, "/")
+}
+
+func chatCompletionsURL(base, chatPath string) string {
 	base = strings.TrimRight(strings.TrimSpace(base), "/")
 	if base == "" {
 		return ""
 	}
-	return base + "/v1/chat/completions"
+	chatPath = normalizeChatPath(chatPath)
+	if chatPath == "" {
+		chatPath = "/v1/chat/completions"
+	}
+	return base + chatPath
 }
