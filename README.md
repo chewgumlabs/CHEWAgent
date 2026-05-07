@@ -11,6 +11,8 @@ accounts, no telemetry, no cloud — your data stays on your machine.
 > know why. I don't seem to mind. I'll help you, even if I think you're
 > weird.*
 
+![CHEWAgent terminal UI showing the CHEW mascot, Public Gum status, visible dialog, and chat prompt.](docs/assets/chewagent-public-gum.png)
+
 ---
 
 ## Install
